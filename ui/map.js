@@ -93,9 +93,12 @@ class MapView {
     this.view = { scale: scale * dpr, ox: (this.canvas.width - this.W * TS * scale * dpr) / 2, oy: (this.canvas.height - this.H * TS * scale * dpr) / 2 };
   }
 
-  // texture px <-> canvas px
+  // texture px <-> canvas px (tile x covers texture px x*40 .. x*40+40)
   sx(px) { return this.view.ox + px * this.view.scale; }
   sy(py) { return this.view.oy + py * this.view.scale; }
+  // ball positions (physics px: metres x 100, where tile x's centre is at x*40) -> canvas px
+  bx(px) { return this.sx(px + TS / 2); }
+  by(py) { return this.sy(py + TS / 2); }
 
   // the map point under a mouse event, in tiles (0.5 = middle of the first tile)
   pointAt(ev) {
@@ -119,7 +122,7 @@ class MapView {
     const g = this.ctx, s = SPRITES[color === 'blue' ? 'blueball' : 'redball'];
     const r = radius * this.view.scale;
     g.globalAlpha = alpha;
-    if (this.tex.tiles && s) g.drawImage(this.tex.tiles, s.x * TS, s.y * TS, TS, TS, this.sx(px) - r, this.sy(py) - r, r * 2, r * 2);
+    if (this.tex.tiles && s) g.drawImage(this.tex.tiles, s.x * TS, s.y * TS, TS, TS, this.bx(px) - r, this.by(py) - r, r * 2, r * 2);
     g.globalAlpha = 1;
   }
 
@@ -127,7 +130,7 @@ class MapView {
     const s = SPRITES.blueflag, g = this.ctx, k = this.view.scale;
     if (!this.tex.tiles || !s) return;
     g.globalAlpha = alpha;
-    g.drawImage(this.tex.tiles, s.x * TS, s.y * TS, TS, TS, this.sx(px) - 2 * k, this.sy(py) - 34 * k, 26 * k, 26 * k);
+    g.drawImage(this.tex.tiles, s.x * TS, s.y * TS, TS, TS, this.bx(px) - 2 * k, this.by(py) - 34 * k, 26 * k, 26 * k);
     g.globalAlpha = 1;
   }
 
@@ -172,8 +175,8 @@ class MapView {
       const fs = Math.max(10, Math.round(13 * k));
       g.font = `700 ${fs}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'bottom';
       g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.75)'; g.fillStyle = '#fff';
-      g.strokeText('SPAWN', this.sx(px), this.sy(py) - 21 * k);
-      g.fillText('SPAWN', this.sx(px), this.sy(py) - 21 * k);
+      g.strokeText('SPAWN', this.bx(px), this.by(py) - 21 * k);
+      g.fillText('SPAWN', this.bx(px), this.by(py) - 21 * k);
     }
     g.restore();
   }
@@ -246,7 +249,7 @@ class MapView {
       for (let p = Math.max(0, end - 10); p <= end; p++) {
         const x = r.path[p * 2], y = r.path[p * 2 + 1];
         if (x < 0) { started = false; continue; }
-        if (started) g.lineTo(this.sx(x), this.sy(y)); else { g.moveTo(this.sx(x), this.sy(y)); started = true; }
+        if (started) g.lineTo(this.bx(x), this.by(y)); else { g.moveTo(this.bx(x), this.by(y)); started = true; }
       }
       g.stroke();
     }
@@ -268,7 +271,7 @@ class MapView {
     for (let i = 0; i <= end; i++) {
       const x = b.path[i * 2], y = b.path[i * 2 + 1];
       if (x < 0) { started = false; continue; }
-      if (started) g.lineTo(this.sx(x), this.sy(y)); else { g.moveTo(this.sx(x), this.sy(y)); started = true; }
+      if (started) g.lineTo(this.bx(x), this.by(y)); else { g.moveTo(this.bx(x), this.by(y)); started = true; }
     }
     g.stroke();
     const p = at(b.path, tick);
