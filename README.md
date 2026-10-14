@@ -36,8 +36,7 @@ The page has a **map preset** box and a **pen**:
 
 The drawn line becomes `via` waypoints every 3 tiles (see Goals), with the grab where the line passes
 the flag and the cap at the end. **Teleports:** lift the pen at a portal (or a spike, since popping
-respawns you at spawn) and start a new line where it sends you; the gap is a teleport, not a walk.
-Portals are drawn as purple arrows to where they send you. Charts, every generation and NEAT's network are at **/dashboard**.
+respawns you at spawn) and start a new line where it sends you; the gap is a teleport, not a walk. Charts, every generation and NEAT's network are at **/dashboard**.
 
 Maps come from Fortunate Maps through BamBall's CORS proxy, `api.bamball.workers.dev` (the Cloudflare
 Worker in [BamBall](https://github.com/BambiTP/BamBall)'s `worker/`). Nothing to set up. To use another
@@ -140,7 +139,8 @@ src/replay.js         runs -> real TagPro replays
 src/server.js         dashboard + the real TagPro client from tagpro-local
 ui/                   dashboard
 maps/*.txt            practice maps (text: # wall, . floor, S spawn, B blue flag, R red flag, * spike, ◣◤◥◢ 45° walls,
-                      1-9 portal pairs)
+                      1-9 two-way portal pairs, o portals linked with "portal x,y > x,y" lines;
+                      unlinked portals are exit-only)
 plans/                saved plans
 runs/                 training runs (every generation)
 ```

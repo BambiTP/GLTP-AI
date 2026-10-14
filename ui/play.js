@@ -220,19 +220,6 @@ function drawPath(g, alpha) {
       g.stroke();
     }
   }
-  // teleports: the gaps between one line's end and the next line's start
-  g.setLineDash([3, 6]);
-  g.strokeStyle = `rgba(200,125,255,${0.9 * alpha})`; g.lineWidth = 2;
-  for (let i = 1; i < S.strokes.length; i++) {
-    const a = S.strokes[i - 1][S.strokes[i - 1].length - 1], b = S.strokes[i][0];
-    if (!a || !b || Math.hypot(a.x - b.x, a.y - b.y) < 1) continue;
-    g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke();
-    const fs = Math.min(14, Math.max(10, 11 * k * 1.2));
-    g.font = `700 ${fs}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = `rgba(200,125,255,${alpha})`;
-    g.fillText('teleport', (X(a) + X(b)) / 2, (Y(a) + Y(b)) / 2 - fs);
-  }
-  g.setLineDash([]);
   // arrows along the way, so the direction is clear
   g.fillStyle = `rgba(255,214,10,${alpha})`;
   for (const line of S.strokes) for (const p of resample([line], 4).slice(1)) {
@@ -269,10 +256,10 @@ function frame(now) {
     S.tick += dt * 60;
     if (S.tick > S.maxTick) S.tick = 0;
     const runs = S.route ? [S.route].concat(S.ghosts) : S.ghosts;
-    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all', spawns: S.map.spawns, portals: S.map.portals, portalAlpha: 0.45 });
+    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all', spawns: S.map.spawns });
     if (S.strokes.length) drawPath(g, 0.35);
   } else {
-    mapView.draw(S.map ? { spawns: S.map.spawns, spawn: S.map.spawn, portals: S.map.portals } : {});
+    mapView.draw(S.map ? { spawns: S.map.spawns, spawn: S.map.spawn } : {});
     if (S.map && S.strokes.length) {
       if (!S.plan && !S.stroke) S.plan = planFromPath();
       if (S.plan) drawWaypoints(g, S.plan);

@@ -75,6 +75,8 @@ async function fetchMap(id, proxy) {
 //   S  red spawn     B  blue flag      R  red flag      Y  yellow flag    E  red endzone
 //   *  spike         +  boost          !  bomb          G  gravity well
 //   1-9 portals: the two tiles with the same digit send the ball to each other
+//   o  a portal; "portal 3,6 > 20,6" sends the one at 3,6 to 20,6. A portal nothing is linked from
+//      is exit-only (TagPro's grey portal)
 //
 // Optional settings go on lines starting with "set ", e.g. "set jumpLimit 3".
 const TEXT_TILES = {
@@ -83,11 +85,13 @@ const TEXT_TILES = {
 };
 
 function fromText(text, name) {
-  const settings = {};
+  const settings = {}, links = [];
   const rows = [];
   for (const line of text.replace(/\r/g, '').split('\n')) {
     const m = /^set (\w+) (.+)$/.exec(line);
     if (m) { settings[m[1]] = JSON.parse(m[2]); continue; }
+    const pm = /^portal (\d+),(\d+)\s*>\s*(\d+),(\d+)\s*$/.exec(line);
+    if (pm) { links.push([+pm[1], +pm[2], +pm[3], +pm[4]]); continue; }
     if (line.trim()) rows.push([...line]);
   }
   const W = Math.max(...rows.map((r) => r.length)), H = rows.length;
@@ -97,6 +101,7 @@ function fromText(text, name) {
     for (let y = 0; y < H; y++) {
       const ch = rows[y][x] ?? ' ';
       if (/[1-9]/.test(ch)) { tiles[x][y] = 13; (pairs[ch] = pairs[ch] || []).push({ x, y }); continue; }
+      if (ch === 'o') { tiles[x][y] = 13; continue; }
       if (!(ch in TEXT_TILES)) throw new Error(`${name}: unknown map character "${ch}" at ${x},${y}`);
       tiles[x][y] = TEXT_TILES[ch];
       if (ch === 'S') red.push({ x, y, radius: 0, weight: 1 });
@@ -107,6 +112,12 @@ function fromText(text, name) {
     portals[ends[0].x + ',' + ends[0].y] = { destination: ends[1], cooldown: 0 };
     portals[ends[1].x + ',' + ends[1].y] = { destination: ends[0], cooldown: 0 };
   }
+  for (const [x, y, dx, dy] of links) {
+    if (!tiles[x] || tiles[x][y] !== 13) throw new Error(`${name}: portal ${x},${y} isn't a portal tile`);
+    portals[x + ',' + y] = { destination: { x: dx, y: dy }, cooldown: 0 };
+  }
+  // portals with nowhere to go are exit-only: the real server sends them as "13.1"
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (tiles[x][y] === 13 && !portals[x + ',' + y]) tiles[x][y] = '13.1';
   return {
     map: {
       tiles, info: { name, author: 'GLTP-AI practice' }, switches: {}, fields: {}, portals,
