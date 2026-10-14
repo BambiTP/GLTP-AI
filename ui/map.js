@@ -140,6 +140,7 @@ class MapView {
     g.imageSmoothingEnabled = true;
     g.drawImage(this.bg, this.view.ox, this.view.oy, this.W * TS * this.view.scale, this.H * TS * this.view.scale);
     if (o.heat) this.drawHeat(o.heat);
+    if (o.spawns) this.drawSpawns(o.spawns, o.spawn);
     if (o.plan) this.drawPlan(o.plan, o.planTargets, o.editing, o.insertAt);
     if (o.runs) this.drawRuns(o);
     if (o.editing && this.hover) {
@@ -147,6 +148,34 @@ class MapView {
       g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 2;
       g.strokeRect(this.sx(this.hover.x * TS), this.sy(this.hover.y * TS), TS * k, TS * k);
     }
+  }
+
+  // spawn areas: a dashed circle per spawn point (its radius, at least the tile itself), and the
+  // exact spot the bot spawns at
+  drawSpawns(spawns, at) {
+    const g = this.ctx, k = this.view.scale;
+    g.save();
+    for (const [team, rgb] of [['blue', '77,171,247'], ['red', '255,90,90']]) {
+      for (const p of spawns[team] || []) {
+        const x = this.sx(p.x * TS + TS / 2), y = this.sy(p.y * TS + TS / 2), r = (Math.max(0, p.radius || 0) + 0.5) * TS * k;
+        g.fillStyle = `rgba(${rgb},.10)`; g.strokeStyle = `rgba(${rgb},.85)`;
+        g.lineWidth = Math.max(1.5, 2.5 * k); g.setLineDash([6 * k + 2, 5 * k + 2]);
+        g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.setLineDash([]);
+        g.fillStyle = `rgba(${rgb},.95)`;
+        g.beginPath(); g.arc(x, y, Math.max(2.5, 4 * k), 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (at) {
+      const px = at.x * 100, py = at.y * 100;
+      this.ball(px, py, 'red', 0.55, 19);
+      const fs = Math.max(10, Math.round(13 * k));
+      g.font = `700 ${fs}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.75)'; g.fillStyle = '#fff';
+      g.strokeText('SPAWN', this.sx(px), this.sy(py) - 21 * k);
+      g.fillText('SPAWN', this.sx(px), this.sy(py) - 21 * k);
+    }
+    g.restore();
   }
 
   drawHeat(h) {

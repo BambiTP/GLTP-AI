@@ -192,12 +192,12 @@ function frame(now) {
     const runs = S.genData.runs;
     mapView.draw({
       runs, best: S.bestIndex, tick: S.tick, show: S.show,
-      heat: $('heat').checked && S.genData.heat ? S.genData.heat : null,
+      heat: $('heat').checked && S.genData.heat ? S.genData.heat : null, spawns: S.run.map.spawns,
       plan: $('show-plan').checked ? S.run.map.plan : null, planTargets: planTargets(S.run.map, S.run.map.plan.steps),
     });
     if (S.genData.algo === 'neat') drawNetwork(runs[S.bestIndex]);
   } else if (S.mode === 'setup' && S.setup && S.setup.map) {
-    mapView.draw({ plan: S.setup.plan, planTargets: planTargets(S.setup.map, S.setup.plan.steps), editing: true, insertAt: S.setup.insertAt });
+    mapView.draw({ plan: S.setup.plan, planTargets: planTargets(S.setup.map, S.setup.plan.steps), editing: true, insertAt: S.setup.insertAt, spawns: S.setup.map.spawns, spawn: S.setup.map.spawn });
   } else mapView.draw({});
   requestAnimationFrame(frame);
 }

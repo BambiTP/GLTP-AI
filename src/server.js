@@ -194,6 +194,8 @@ class Dashboard {
       key: level.key, name: level.name, author: level.author, difficulty: level.difficulty,
       gltp: level.gltp ? { categories: level.gltp.categories, balls: level.gltp.balls_req, caps: level.gltp.caps_to_win } : null,
       tiles: level.map.tiles, spawn: sim.spawn, settings: { mode: level.settings.mode, jumpLimit: level.settings.jumpLimit },
+      // where each team spawns (tiles; radius in tiles): the map's spawn points, or around its flag when it has none
+      spawns: { red: sim.room.spawnTiles[1], blue: sim.room.spawnTiles[2] },
       plan: { steps: P.steps, timeFrom: plan.timeFrom, source: plan.source, text: stepsText(P.steps), total: P.total, seg: P.seg },
       gltpSteps: defaultSteps(level),
     };

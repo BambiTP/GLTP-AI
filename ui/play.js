@@ -218,10 +218,10 @@ function frame(now) {
     S.tick += dt * 60;
     if (S.tick > S.maxTick) S.tick = 0;
     const runs = S.route ? [S.route].concat(S.ghosts) : S.ghosts;
-    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all' });
+    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all', spawns: S.map.spawns });
     if (S.strokes.length) drawPath(g, 0.35);
   } else {
-    mapView.draw({});
+    mapView.draw(S.map ? { spawns: S.map.spawns, spawn: S.map.spawn } : {});
     if (S.map && S.strokes.length) {
       if (!S.plan && !S.stroke) S.plan = planFromPath();
       if (S.plan) drawWaypoints(g, S.plan);
@@ -337,6 +337,7 @@ $('map').addEventListener('pointerdown', () => {
   if (S.run && !S.live && S.pen) { S.run = null; S.route = null; S.ghosts = []; routeTag = ''; showEditing(); }
 }, true);
 window.addEventListener('resize', () => mapView.fit());
+window.addEventListener('hashchange', () => { const c = decodeURIComponent(location.hash.slice(1)); if (c && !S.live && (!S.map || c !== S.map.key)) loadMap(c); });
 
 (async () => {
   try { pack = (await api('/api/maps')).pack || {}; } catch (e) { /* default textures */ }
