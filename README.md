@@ -1,0 +1,124 @@
+# GLTP-AI
+
+Bots that learn TagPro gravity maps, to beat them as fast as possible or at least prove they can be beaten.
+
+Everything runs on [tagpro-local](https://github.com/BambiTP/tagpro-local)'s real game room: the same
+Box2D build, gravity, jumps, gates, buttons, portals, bombs and boosts as the server. Runs can be watched
+in the **real TagPro client** with the real graphics.
+
+Two algorithms:
+
+- **Go-Explore** proves a map possible. It remembers every distinct place the ball has been, replays the
+  fastest keys that reach one, then presses random keys from there. When the plan's last step is done,
+  the map is proven possible, and it keeps getting faster for as long as it runs.
+- **NEAT** works like SethBling's MarI/O. A population of neural networks sees the tiles around the ball
+  and presses keys. The best ones breed, mutate and split into species.
+
+## Setup
+
+```sh
+npm install            # Node 18+; installs tagpro-local from GitHub
+node cli.js view       # dashboard at http://localhost:8080
+```
+
+Fortunate Maps is reached through your CORS proxy. Set it once in `config.json` (copy
+`config.example.json`), or with `FM_PROXY=...` or `--proxy ...`. `{url}` in it is replaced by the
+encoded Fortunate Maps URL. Without `{url}` the URL is appended.
+
+```json
+{ "proxy": "https://your-proxy.example/?url={url}" }
+```
+
+## Use
+
+```sh
+node cli.js explore 88528                 # Go-Explore on GLTP map 88528 (downloads it), dashboard live
+node cli.js neat tower --population 300   # NEAT on the "tower" practice map
+node cli.js explore steps --goal "reach 2,2; grab; cap"   # a custom path
+node cli.js verify                        # replay the latest run's best keys in a fresh room: the proof
+node cli.js maps climb                    # GLTP maps matching "climb", easiest first
+node cli.js help                          # every command and option
+```
+
+Or do it all from the dashboard. **New run** lets you pick a map (practice, the GLTP list, or any
+Fortunate Maps id), set its goals and path, choose the strategy, and start.
+
+### The dashboard
+
+- **The map** in the real texture pack. Every run of the selected generation plays at once: the best in
+  red with its trail, the rest as blue ghosts. The plan's steps are drawn on top, and Go-Explore runs can
+  show the archive as a heat map.
+- **Generations**: best and mean progress, and the fastest finish time (yellow; dots mark new records).
+  Click anywhere on it to look at that generation.
+- **Species** (NEAT) or **Archive** (Go-Explore) over time.
+- **Best network** (NEAT), drawn like MarI/O: the box of tiles it sees, its links, and the keys it holds.
+- **▶ Watch in TagPro** opens the generation in the real TagPro client: the best run plus 30 more of the
+  generation as blue balls, with the clock counting the run's time.
+
+## Goals and paths
+
+A run follows a **plan**: an ordered list of steps. Finishing the last one is the win, and the tick it
+happens on is the run's time.
+
+| step | done when |
+|---|---|
+| `reach x,y [rN]` | the ball's centre is within N tiles (default 1) of tile x,y: a waypoint |
+| `grab` | a flag (blue or yellow) is grabbed |
+| `cap` | a cap (blue flag on the red flag, yellow flag on a red endzone) |
+| `button x,y` | the button on tile x,y is touched |
+
+A **custom path** is a list of `reach` steps. Progress is measured along it, step by step, as walking
+distance (around walls, through portals), not as a straight line. That steers both algorithms: drawing
+the route you think works is the strongest hint you can give them. In the dashboard, click the map to
+add waypoints after the highlighted step.
+
+By default a map's plan is its GLTP rules: `grab; cap`, repeated on maps that need 3 caps. **Save as this
+map's plan** stores it in `plans/<map>.json`, and new runs on that map use it. `--time-from N` (or
+"Clock starts" in the dashboard) starts the clock when step N is done instead of at spawn.
+
+## Strategy settings
+
+| | setting | default | what it does |
+|---|---|---|---|
+| Go-Explore | `--explore-ticks` | 90 | random keys for this long from each picked cell |
+| | `--hold-mean` | 6 | average ticks a random key combination is held |
+| | `--frontier` | 4 | how strongly picks favour cells further along the plan |
+| | `--batch` | 8 per CPU | explorations per generation |
+| NEAT | `--population` | 300 | networks per generation |
+| | `--think-every` | 2 | ticks between key choices (MarI/O: 5 frames) |
+| | `--patience` | 180 | a run ends after this many ticks without progress |
+| | `--max-ticks` | 3600 | longest run |
+| | `--end-on-pop` | true | popping ends the run |
+| both | `--max-gens`, `--seed`, `--workers` | | |
+
+## How exact is it
+
+Runs are deterministic. Time is the tick count, every room timer (respawns, gates, boosts, bombs) fires
+on it, spawns are seeded, and keys go in through the room's own input handler. So a run's keys replay to
+the same tick, bit for bit (`node cli.js verify`), and that replay is the proof.
+
+How close that is to the live server is tagpro-local's accuracy: its replay checks match about 99.7% of
+quarter-second segments of real games, and the jump strength is fitted from real gravity replays. A
+route that depends on a single tick could still go differently on the real server.
+
+The bot plays one red ball alone. Buddy maps (2+ balls) need moves no single ball can make.
+
+## Files
+
+```
+cli.js                commands
+src/sim.js            one ball in tagpro-local's room, tick by tick
+src/goals.js          plans: steps, progress along them, saved plans
+src/progress.js       walking-distance fields over a map
+src/maps.js           Fortunate Maps (through the proxy), practice maps, GLTP settings
+src/episodes.js       one NEAT run / one Go-Explore exploration
+src/neat.js           NEAT, ported from MarI/O
+src/train-neat.js     NEAT training loop
+src/train-explore.js  Go-Explore
+src/replay.js         runs -> real TagPro replays
+src/server.js         dashboard + the real TagPro client from tagpro-local
+ui/                   dashboard
+maps/*.txt            practice maps (text: # wall, . floor, S spawn, B blue flag, R red flag, * spike, ◣◤◥◢ 45° walls)
+plans/                saved plans
+runs/                 training runs (every generation)
+```

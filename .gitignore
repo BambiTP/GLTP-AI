@@ -1,0 +1,6 @@
+node_modules/
+runs/
+config.json
+# maps downloaded from Fortunate Maps (the practice maps in maps/ are kept)
+maps/*.png
+maps/*.json

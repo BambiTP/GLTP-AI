@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GLTP-AI</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="ball"></span>GLTP<span class="dot">·</span>AI</div>
+    <select id="run-picker" title="Saved runs"></select>
+    <div class="badges" id="badges"></div>
+    <div class="spacer"></div>
+    <div class="live-progress" id="live-progress" hidden><div class="bar"><i></i></div><span></span></div>
+    <button id="stop" class="btn danger" hidden>Stop</button>
+    <button id="new-run" class="btn primary">New run</button>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div class="stage-head">
+        <div class="title">
+          <h1 id="map-name">GLTP-AI</h1>
+          <div class="sub" id="map-sub"></div>
+        </div>
+        <div class="seg" id="show-mode" role="group" aria-label="Runs to show">
+          <button data-show="all" class="on">All runs</button><button data-show="top">Top 10</button><button data-show="best">Best</button>
+        </div>
+        <label class="toggle" id="heat-toggle" hidden><input type="checkbox" id="heat"> Archive heat</label>
+        <label class="toggle"><input type="checkbox" id="show-plan" checked> Plan</label>
+      </div>
+      <div class="canvas-wrap" id="canvas-wrap">
+        <canvas id="map"></canvas>
+        <div class="empty" id="empty" hidden>
+          <h2>No runs yet</h2>
+          <p>Pick a map, set its goals, and start Go-Explore or NEAT.</p>
+          <button class="btn primary" id="empty-new">New run</button>
+        </div>
+        <div class="edit-hint" id="edit-hint" hidden>Click the map to add waypoints (click a button tile to add “touch button”)</div>
+      </div>
+      <div class="player" id="player">
+        <button class="icon" id="play" title="Play / pause (space)">❚❚</button>
+        <span class="clock" id="clock">0:00.00</span>
+        <input type="range" id="scrub" min="0" max="100" value="0">
+        <select id="speed" title="Speed">
+          <option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+        </select>
+        <button class="btn tagpro" id="watch" title="Play this generation in the real TagPro client">▶ Watch in TagPro</button>
+      </div>
+    </section>
+
+    <aside class="side" id="run-side">
+      <div class="stats" id="stats"></div>
+      <div class="card">
+        <div class="card-head"><h3>Generations</h3><span class="hint" id="gen-label"></span></div>
+        <canvas class="chart" id="chart-progress"></canvas>
+        <div class="gen-nav">
+          <button class="icon small" id="gen-prev" title="Previous generation">‹</button>
+          <input type="range" id="gen-slider" min="0" max="0" value="0">
+          <button class="icon small" id="gen-next" title="Next generation">›</button>
+          <label class="toggle small"><input type="checkbox" id="follow" checked> Follow latest</label>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3 id="chart2-title">Species</h3><span class="hint" id="chart2-hint"></span></div>
+        <canvas class="chart" id="chart-second"></canvas>
+      </div>
+      <div class="card" id="net-card">
+        <div class="card-head"><h3>Best network</h3><span class="hint" id="net-hint"></span></div>
+        <canvas id="net"></canvas>
+      </div>
+      <div class="card" id="plan-card">
+        <div class="card-head"><h3>Plan</h3><span class="hint" id="plan-source"></span></div>
+        <ol class="steps readonly" id="run-steps"></ol>
+      </div>
+    </aside>
+
+    <aside class="side" id="setup-side" hidden>
+      <div class="card">
+        <div class="card-head"><h3>1 · Map</h3><span class="hint" id="proxy-hint"></span></div>
+        <div class="tabs" id="map-tabs"><button data-tab="practice" class="on">Practice</button><button data-tab="gltp">GLTP maps</button><button data-tab="id">Fortunate Maps id</button></div>
+        <div id="tab-practice" class="maplist"></div>
+        <div id="tab-gltp" hidden>
+          <input type="search" id="map-search" placeholder="Search name, author, category…">
+          <div class="maplist" id="gltp-list"></div>
+        </div>
+        <div id="tab-id" hidden class="row">
+          <input type="text" id="fm-id" placeholder="e.g. 88528" inputmode="numeric">
+          <button class="btn" id="fm-load">Load</button>
+        </div>
+        <div class="err" id="map-err" hidden></div>
+      </div>
+      <div class="card" id="goals-card" hidden>
+        <div class="card-head"><h3>2 · Goals &amp; path</h3><span class="hint" id="goal-total"></span></div>
+        <p class="help">The run is won when every step is done, in order. Click the map to add a waypoint after the highlighted step.</p>
+        <ol class="steps" id="steps"></ol>
+        <div class="row wrap">
+          <button class="btn small" data-add="grab">+ Grab</button>
+          <button class="btn small" data-add="cap">+ Cap</button>
+          <label class="inline">Clock starts <select id="time-from"></select></label>
+        </div>
+        <div class="row wrap">
+          <button class="btn small ghost" id="plan-gltp">Reset to GLTP rules</button>
+          <button class="btn small ghost" id="plan-clear">Clear path</button>
+          <button class="btn small" id="plan-save">Save as this map's plan</button>
+        </div>
+        <div class="err" id="plan-err" hidden></div>
+      </div>
+      <div class="card" id="strategy-card" hidden>
+        <div class="card-head"><h3>3 · Strategy</h3></div>
+        <div class="seg wide" id="algo">
+          <button data-algo="explore" class="on">Go-Explore<small>prove it's possible, then get faster</small></button>
+          <button data-algo="neat">NEAT<small>MarI/O: evolve a network that plays</small></button>
+        </div>
+        <div class="fields" id="fields"></div>
+        <button class="btn primary big" id="start">Start training</button>
+        <button class="btn ghost" id="cancel-setup">Cancel</button>
+        <div class="err" id="start-err" hidden></div>
+      </div>
+    </aside>
+  </main>
+
+  <dialog id="tagpro-dialog">
+    <div class="dialog-head">
+      <strong id="tagpro-title">Real TagPro client</strong>
+      <span class="hint">best run in red · the rest of the generation in blue</span>
+      <div class="spacer"></div>
+      <a id="tagpro-open" target="_blank" class="btn small ghost">Open in new tab</a>
+      <button class="btn small" id="tagpro-close">Close</button>
+    </div>
+    <iframe id="tagpro-frame" title="TagPro replay"></iframe>
+  </dialog>
+
+  <script src="/src/inputs.js"></script>
+  <script src="/ui/sprites.js"></script>
+  <script src="/ui/map.js"></script>
+  <script src="/ui/charts.js"></script>
+  <script src="/ui/network.js"></script>
+  <script src="/ui/app.js"></script>
+</body>
+</html>
