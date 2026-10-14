@@ -1,136 +1,105 @@
-// node test/run.js - quick checks that the simulator, plans, trainers and replays hold together
+// npm test - checks the simulator, the explorer, saved runs and replays
 const assert = require('assert');
-const { loadLevel, fromText, proxyUrl, DEFAULT_PROXY } = require('../src/maps');
-const { Sim, play, encodeKeys, keysLength, sliceKeys, concatKeys } = require('../src/sim');
-const { Plan, parseSteps, stepsText } = require('../src/goals');
-const { buildReplay } = require('../src/replay');
-const { ExploreTrainer } = require('../src/train-explore');
-const { NeatTrainer } = require('../src/train-neat');
 const fs = require('fs');
+const path = require('path');
+const runs = require('../src/runs');
+const { loadLevel, resolve, proxyUrl, DEFAULT_PROXY } = require('../src/maps');
+const { Sim, play, encodeKeys, sliceKeys, concatKeys } = require('../src/sim');
+const { Goal } = require('../src/progress');
+const { Explorer } = require('../src/explore');
+const { buildReplay } = require('../src/replay');
 
+const mapFile = (name) => path.join(__dirname, 'maps', name + '.txt');
 let failed = 0;
 async function check(name, fn) {
-  try { await fn(); console.log('ok   ' + name); } catch (e) { failed++; console.log('FAIL ' + name + '\n     ' + (e.stack || e).split('\n').slice(0, 3).join('\n     ')); }
+  try { await fn(); console.log('ok   ' + name); } catch (e) { failed++; console.log('FAIL ' + name + '\n     ' + String(e.stack || e).split('\n').slice(0, 3).join('\n     ')); }
+}
+
+// explore for up to `seconds`, or until finished (untilDone); returns the run's meta
+async function explore(level, key, seconds, meta = runs.create(level, key), untilDone = true) {
+  const e = new Explorer(meta, level), t0 = Date.now();
+  const timer = setInterval(() => { if ((untilDone && meta.time != null) || Date.now() - t0 > seconds * 1000) e.stop(); }, 100);
+  await e.start();
+  clearInterval(timer);
+  return meta;
 }
 
 (async () => {
-  const level = loadLevel('steps');
-  const random = (seed) => () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const steps = loadLevel(mapFile('steps'));
+  const randomKeys = (n, seed) => { const out = []; let r = seed, k = 0; for (let i = 0; i < n; i++) { if (i % 10 === 0) { r = (r * 1103515245 + 12345) & 0x7fffffff; k = r % 16; } out.push(k); } return encodeKeys(out); };
 
   await check('the same keys give the same run, to the last bit', () => {
-    const r = random(3), keys = [];
-    let k = 0;
-    for (let i = 0; i < 1500; i++) { if (i % 9 === 0) k = Math.floor(r() * 16); keys.push(k); }
-    const a = play(level, encodeKeys(keys)).ball(), b = play(level, encodeKeys(keys)).ball();
-    assert.deepStrictEqual(a, b);
+    const keys = randomKeys(3000, 3);
+    assert.deepStrictEqual(play(steps, keys).ball(), play(steps, keys).ball());
+  });
+
+  await check('the speed-ups change nothing: same end state as the plain engine', () => {
+    for (const m of ['steps', 'spikes', 'portal']) {
+      const L = loadLevel(mapFile(m)), keys = randomKeys(8000, 11);
+      const a = play(L, keys), b = play(L, keys, { plain: true });
+      assert.deepStrictEqual([a.ball(), a.pops, a.grabTicks], [b.ball(), b.pops, b.grabTicks], m);
+    }
   });
 
   await check('a jump goes up about 4 tiles holding up, and uses a jump', () => {
-    const s = new Sim(level);
+    const s = new Sim(steps);
     for (let i = 0; i < 30; i++) s.step();
     const y0 = s.ball().y;
     s.setKeys(4);
     let top = y0;
     for (let i = 0; i < 90; i++) { s.step(); top = Math.min(top, s.ball().y); }
-    const tiles = (y0 - top) / 0.4;
-    assert(tiles > 3.5 && tiles < 5, `jumped ${tiles} tiles`);
+    assert((y0 - top) / 0.4 > 3.5 && (y0 - top) / 0.4 < 5);
     assert.strictEqual(s.jumpsLeft, s.jumpLimit - 1);
   });
 
   await check('key sequences slice and join', () => {
-    const k = [1, 5, 2, 3, 0, 4];
-    assert.deepStrictEqual(sliceKeys(k, 6), [1, 5, 2, 1]);
+    assert.deepStrictEqual(sliceKeys([1, 5, 2, 3, 0, 4], 6), [1, 5, 2, 1]);
     assert.deepStrictEqual(concatKeys([1, 2], [1, 3, 4, 1]), [1, 5, 4, 1]);
-    assert.strictEqual(keysLength(k), 12);
   });
 
-  await check('plans parse, print and validate', () => {
-    const steps = parseSteps('reach 10,5 r2; grab; button 3,4; cap');
-    assert.deepStrictEqual(steps[0], { type: 'reach', x: 10, y: 5, r: 2 });
-    assert.strictEqual(stepsText(parseSteps('reach 3,3; via 5,5; via 6,6 r3; grab; cap')), 'reach 3,3; via 5,5; via 6,6 r3; grab; cap');
-    assert.throws(() => new Plan(level, [{ type: 'button', x: 3, y: 3 }], new Sim(level).spawn), /no button/);
+  await check('pasted codes: presets, group links, ids', () => {
+    assert.deepStrictEqual(resolve('gZMefGzCggtaiaaaJraaksaaamaaaE'), { key: 'gZMefGzCggtaiaaaJraaksaaamaaaE', id: '87856', preset: 'gZMefGzCggtaiaaaJraaksaaamaaaE' });
+    assert.strictEqual(resolve('https://tagpro.koalabeast.com/groups/create?preset=gZMefGXjggtaiaaaJyaraakE').id, '89085');
+    assert.strictEqual(resolve('88528').preset, 'gZMefGMyggtaiaaaJraaksaaamaaaE'); // its GLTP preset
+    assert.throws(() => resolve('gZtkoauHtYRf'), /random/);
+    assert.throws(() => resolve('hello'), /paste a map preset/);
+    assert.strictEqual(proxyUrl(DEFAULT_PROXY, '88528', 'png'), 'https://api.bamball.workers.dev/api/fortunatemaps/88528/png');
   });
 
-  await check('passing a later via point counts for the ones before it', () => {
-    const sim = new Sim(level);
-    const tx = Math.round(sim.spawn.x / 0.4), ty = Math.round(sim.spawn.y / 0.4);
-    const plan = new Plan(level, [{ type: 'reach', x: tx + 8, y: ty, r: 1, soft: true }, { type: 'reach', x: tx, y: ty, r: 1, soft: true }, { type: 'grab' }], sim.spawn);
-    const st = plan.update(plan.start(), sim);
-    assert.strictEqual(st.step, 2);
-    const hard = new Plan(level, [{ type: 'reach', x: tx + 8, y: ty, r: 1 }, { type: 'reach', x: tx, y: ty, r: 1 }, { type: 'grab' }], sim.spawn);
-    assert.strictEqual(hard.update(hard.start(), sim).step, 0);
+  await check('progress: 0 at spawn, the whole way once capped', () => {
+    const s = new Sim(steps), g = new Goal(steps, s.spawn);
+    assert(Math.abs(g.progress(s)) < 0.5 && g.total > 20);
   });
 
-  await check('progress runs from 0 at spawn to the plan total', () => {
-    const sim = new Sim(level);
-    const plan = new Plan(level, parseSteps('grab; cap'), sim.spawn);
-    const st = plan.start();
-    assert(Math.abs(plan.progress(st, sim)) < 0.5, 'not ~0 at spawn');
-    assert(plan.total > 20);
+  let meta;
+  await check('the explorer beats a map, and its best run replays to the same finish', async () => {
+    meta = await explore(steps, mapFile('steps'), 40);
+    assert(meta.time != null, 'not finished in 40 s');
+    const best = runs.read(meta.id, 'best.json'), sim = play(steps, best.keys);
+    assert.strictEqual(new Goal(steps, sim.spawn).finishTick(sim), meta.time);
   });
 
-  await check('proxy URLs', () => {
-    assert.strictEqual(proxyUrl('https://p.example/?url={url}', 'https://a/b?c'), 'https://p.example/?url=https%3A%2F%2Fa%2Fb%3Fc');
-    assert.strictEqual(proxyUrl('https://p.example/?u=', 'https://a/b'), 'https://p.example/?u=https%3A%2F%2Fa%2Fb');
-    assert.strictEqual(proxyUrl('https://p.example/', 'https://a/b'), 'https://p.example/https://a/b');
-    assert.strictEqual(proxyUrl(DEFAULT_PROXY, 'https://fortunatemaps.herokuapp.com/png/88528'), 'https://api.bamball.workers.dev/api/fortunatemaps/88528/png');
+  await check('a stopped run continues from its saved memory', async () => {
+    const places = runs.read(meta.id, 'archive.json').length;
+    const gen = meta.gen;
+    const again = await explore(steps, mapFile('steps'), 3, runs.load(meta.id), false);
+    assert(again.gen > gen && again.cells >= places);
   });
 
-  let run;
-  await check('Go-Explore proves the steps practice map possible, and the keys replay to the same time', async () => {
-    const t = new ExploreTrainer(level, { maxGens: 60 });
-    await t.start();
-    run = t.run;
-    assert(t.run.meta.fastest, 'not finished in 60 generations');
-    const best = t.run.generation(t.run.meta.fastest.gen).best;
-    const sim = new Sim(level);
-    const plan = new Plan(level, t.run.meta.plan.steps, sim.spawn);
-    const st = plan.start();
-    play(level, best.keys, {}, (s) => { plan.update(st, s); return !plan.finished(st); });
-    assert.strictEqual(plan.time(st), t.run.meta.fastest.time);
+  await check('portals: the explorer goes through them', async () => {
+    const L = loadLevel(mapFile('portal'));
+    const m = await explore(L, mapFile('portal'), 60);
+    assert(m.time != null, 'not finished in 60 s');
+    fs.rmSync(path.join(runs.RUNS, m.id), { recursive: true });
   });
 
-  await check('NEAT runs generations and gets somewhere', async () => {
-    const t = new NeatTrainer(level, { maxGens: 5, population: 60 });
-    await t.start();
-    const s = t.run.summaries();
-    assert.strictEqual(s.length, 5);
-    assert(s[4].progress > 0.05);
-    fs.rmSync(t.run.dir, { recursive: true });
-  });
-
-  await check('a replay becomes a path: the capping life, with grab and cap', () => {
-    const { Sim: S2, keysPerTick: kpt, encodeKeys: enc } = require('../src/sim');
-    const demo = require('../src/demo');
-    const sol = [...kpt(run.generation(run.meta.fastest.gen).best.keys)];
-    const sim = new S2(level);
-    const out = require('../src/replay').buildReplay(level, enc(sol), { name: 'T' });
-    const d = demo.parse(out.text);
-    assert.strictEqual(d.player.name, 'T');
-    assert.strictEqual(d.lives.filter((l) => l.cap != null).length, 1);
-    const g = demo.goodPath(d, { x: sim.spawn.x / 0.4 + 0.5, y: sim.spawn.y / 0.4 + 0.5 });
-    assert.strictEqual(g.lines.length, 1);
-    const plan = require('../src/path').pathToPlan(level.map.tiles, sim.spawn, [{ type: 'grab' }, { type: 'cap' }], g.lines);
-    assert(plan.steps.some((s) => s.type === 'grab') && plan.steps[plan.steps.length - 1].type === 'cap');
-    assert(plan.steps.filter((s) => s.soft).length > 3);
-  });
-
-  await check('a replay has the real recorder header, a player id, and ghosts', () => {
-    const g = run.generation(run.meta.fastest.gen);
-    const r = buildReplay(level, g.best.keys, { ghosts: g.runs.slice(0, 3).map((x, i) => ({ name: '#' + i, path: x.path })) });
-    const lines = r.text.trim().split('\n').map((l) => JSON.parse(l));
+  await check('a replay has the real recorder header, the player, and the cap', () => {
+    const text = buildReplay(steps, runs.read(meta.id, 'best.json').keys);
+    const lines = text.trim().split('\n').map((l) => JSON.parse(l));
     assert.strictEqual(lines[0][1], 'recorder-metadata');
     assert(lines.some((l) => l[1] === 'id'));
-    assert(lines.some((l) => l[1] === 'p' && l[2].u && l[2].u.some((u) => u.id === 1001)));
-    assert(r.capTick != null);
-    fs.rmSync(run.dir, { recursive: true });
-  });
-
-  await check('text maps', () => {
-    const t = fromText('#####\n#S.B#\n#####\nset jumpLimit 3', 'x');
-    assert.strictEqual(t.map.tiles[3][1], 4);
-    assert.deepStrictEqual(t.map.spawnPoints.red, [{ x: 1, y: 1, radius: 0, weight: 1 }]);
-    assert.strictEqual(t.settings.jumpLimit, 3);
+    assert(lines.some((l) => l[1] === 'score' && l[2].r === 1));
+    fs.rmSync(path.join(runs.RUNS, meta.id), { recursive: true });
   });
 
   console.log(failed ? `\n${failed} failed` : '\nall passed');

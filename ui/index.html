@@ -5,71 +5,45 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GLTP-AI</title>
   <link rel="icon" href="/favicon.ico">
-  <link rel="stylesheet" href="/ui/play.css">
+  <link rel="stylesheet" href="/ui/style.css">
 </head>
 <body>
-  <header class="bar">
-    <div class="brand"><span class="ball"></span>GLTP<span class="dot">·</span>AI</div>
-    <form class="code" id="code-form" autocomplete="off">
-      <input id="code" placeholder="Map preset" spellcheck="false" aria-label="Map preset (or a group link with ?preset=)">
-      <button type="submit">Load</button>
+  <header>
+    <div class="brand"><span class="logo"></span>GLTP<b>·</b>AI</div>
+    <form id="go-form" autocomplete="off">
+      <input id="code" placeholder="Paste a map preset" spellcheck="false" aria-label="Map preset">
+      <button id="go">Go</button>
     </form>
-    <div class="msg" id="msg"></div>
-    <div class="spacer"></div>
-    <select id="algo" title="How the bot learns">
-      <option value="explore">Go-Explore</option>
-      <option value="neat">NEAT</option>
-    </select>
-    <button class="go" id="go" disabled>Go ▶</button>
+    <select id="runs" aria-label="Past runs"><option value="">Past runs</option></select>
   </header>
 
-  <main id="stage">
+  <main>
     <canvas id="map"></canvas>
-
-    <div class="hero" id="hero">
-      <div class="hero-ball"></div>
-      <h1>Draw the way. The bot figures out the rest.</h1>
-      <p class="sub">Paste a map preset: its map, played with its settings.</p>
-      <form id="hero-form" autocomplete="off">
-        <input id="hero-code" placeholder="Map preset, e.g. gZMefGzCggtaiaaaJraaksaaamaaaE" spellcheck="false" autofocus>
-        <button type="submit">Load map</button>
-      </form>
-      <p class="sub">Or drop a replay of someone beating the map here. A group link with ?preset=, a Fortunate Maps id, or a practice map: <a href="#" data-map="steps">steps</a> · <a href="#" data-map="tower">tower</a> · <a href="#" data-map="spikes">spikes</a> · <a href="#" data-map="slopes">slopes</a></p>
+    <div id="hero">
+      <div class="logo big"></div>
+      <h1>Paste a map preset and press Go.</h1>
+      <p>The bot explores the map until it beats it, then keeps getting faster. Past runs are under <b>Past runs</b>.</p>
     </div>
-
-    <div class="tools" id="tools" hidden>
-      <button id="pen" class="on" title="Draw a rough path (drag on the map)">✎</button>
-      <button id="hand" title="Move the map (or right-drag, or hold Space). Scroll to zoom">✋</button>
-      <button id="fit" title="Fit the whole map (F)">⤢</button>
-      <button id="replay" title="Use a replay: its good parts become the path (or drop a .ndjson file on the map)">📼</button>
-      <input type="file" id="replay-file" accept=".ndjson,.txt,application/x-ndjson,text/plain" hidden>
-      <div class="sep"></div>
-      <button id="undo" title="Undo the last line (Ctrl+Z)">↶</button>
-      <button id="clear" title="Clear the path">✕</button>
-    </div>
-    <div class="hint" id="hint" hidden>Just press Go: the bot finds the way by itself. Optional hints: draw a rough path, or drop a replay of someone beating the map (📼). Scroll to zoom, right-drag to move.</div>
-
-    <div class="status" id="status" hidden>
+    <div id="error" hidden></div>
+    <section id="status" hidden>
       <div class="meter"><i id="meter"></i></div>
-      <div class="line"><strong id="headline">Starting…</strong><span id="detail"></span></div>
-      <div class="actions">
-        <button id="watch" title="Watch the best run so far in the real TagPro client">▶ Watch in TagPro</button>
-        <a id="download" title="Save the best run so far as a TagPro replay file (.ndjson)">⬇ Replay</a>
-        <a href="/dashboard" target="_blank" title="Charts, every generation, the network">Details</a>
+      <div class="text"><strong id="headline"></strong><span id="detail"></span></div>
+      <div class="buttons">
+        <button id="watch">▶ Watch in TagPro</button>
+        <a id="download" class="button">⬇ Replay</a>
         <button id="stop" class="stop">Stop</button>
+        <button id="continue">Continue</button>
       </div>
-    </div>
+    </section>
   </main>
 
   <dialog id="tagpro">
-    <div class="dhead"><strong id="tagpro-title">TagPro</strong><span>best run in red, the rest in blue</span><button id="tagpro-close">Close</button></div>
+    <div class="bar"><strong id="tagpro-title"></strong><button id="tagpro-close">Close</button></div>
     <iframe id="tagpro-frame" title="TagPro replay"></iframe>
   </dialog>
 
   <script src="/ui/sprites.js"></script>
   <script src="/ui/map.js"></script>
-  <script src="/src/path.js"></script>
-  <script src="/src/demo.js"></script>
-  <script src="/ui/play.js"></script>
+  <script src="/ui/app.js"></script>
 </body>
 </html>

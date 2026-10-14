@@ -1,18 +1,16 @@
 // sim.js - one ball on a map, played through tagpro-local's real game room, tick by tick.
 //
 // Everything that makes a live room non-repeatable is pinned down, so the same keys always give the
-// same run (to the last bit):
-//   - time is the tick count (60 per second), and every timer the room sets (respawns, gate timers,
-//     boost and bomb respawns, powerups) fires on that clock instead of setTimeout
-//   - spawns and powerups pick from a seeded random number generator
+// same run, to the last bit:
+//   - time is the tick count (60 per second), and every timer the room sets (respawns, gates, boosts,
+//     bombs, powerups) fires on that clock instead of setTimeout
+//   - spawns and powerups come from a seeded random number generator
 //   - nobody gets AFK-kicked, the clock never runs out, a cap doesn't end the game
-// Keys go in through the room's own input handler (the same path a real client's keydown takes),
-// so jumps happen exactly as on the server.
+// Keys go in through the room's own input handler, the same path a real client's keydown takes.
 const tp = require('./tagpro');
 
 const STEP_MS = 1000 / 60;
 const KEY_BITS = { left: 1, right: 2, up: 4, down: 8 };
-const KEY_NAMES = Object.keys(KEY_BITS);
 
 // timers handed out by Sim are plain objects; clearTimeout has to recognise them
 const realClearTimeout = globalThis.clearTimeout;
@@ -36,38 +34,22 @@ function rng(seed) { // mulberry32
   };
 }
 
-function withRandom(random, fn) {
-  const saved = Math.random;
-  Math.random = random;
-  try { return fn(); } finally { Math.random = saved; }
-}
-
 class Sim {
-  // opts: { seed, recorder (a client that receives every packet, see replay.js), name, settings }
+  // opts: { recorder (a client that gets every packet, for replays), name, plain (no speed-ups, for tests) }
   constructor(level, opts = {}) {
     this.level = level;
-    this.opts = opts;
-    this.gateGroups = gateGroups(level.map.tiles);
-    this.reset();
-  }
-
-  reset() {
-    const { level, opts } = this;
     this.t = 0;
     this.tick = 0;
     this.timers = [];
     this.timerSeq = 0;
     this.keys = 0;
     this.keySeq = 0;
-    this.grabTick = null;
-    this.capTick = null;
+    this.grabTicks = [];  // ticks played when each grab happened
+    this.capTicks = [];   // ... each cap
     this.pops = 0;
-    this.grabCount = 0;
-    this.capCount = 0;
-    const random = rng(opts.seed || 1);
-    const settings = Object.assign({}, level.settings, {
-      disableAfk: true, caps: 0, mercyRule: 0, overtime: false, time: 60,
-    }, opts.settings || {});
+    const random = rng(1);
+    const withRandom = (fn) => { const saved = Math.random; Math.random = random; try { return fn(); } finally { Math.random = saved; } };
+    const settings = Object.assign({}, level.settings, { disableAfk: true, caps: 0, mercyRule: 0, overtime: false, time: 60 });
     const room = this.room = new tp.GameRoom({
       id: 'gltp-ai', uuid: 'gltp-ai', map: level.map, mapName: level.name, settings, isPrivate: true,
       now: () => this.t, onEnd() {}, onEmpty() {},
@@ -82,19 +64,17 @@ class Sim {
     room.end = () => {};
     room.checkWinConditions = () => {};
     if (!opts.recorder) {
-      // nobody's listening while training: don't build update packets (queue, flushDirty and
-      // snapshot only make packets; physics never reads them)
+      // nobody's listening: don't build update packets (physics never reads them)
       room.broadcast = () => {}; room.send = () => {};
       room.queue = () => {}; room.flushDirty = () => {}; room.snapshot = () => {};
     }
     const pickSpawn = room.pickSpawn.bind(room), randomPup = room.randomPup.bind(room);
-    room.pickSpawn = (team) => withRandom(random, () => pickSpawn(team));
-    room.randomPup = () => withRandom(random, () => randomPup());
-    // what happened when (ticks)
+    room.pickSpawn = (team) => withRandom(() => pickSpawn(team));
+    room.randomPup = () => withRandom(() => randomPup());
+    // what happened when, in ticks played (this.tick counts up after the step)
     const capture = room.capture.bind(room), grabFlag = room.grabFlag.bind(room), pop = room.pop.bind(room);
-    // (in ticks played when it happened: this.tick counts up once the step is over)
-    room.capture = (p) => { if (p === this.p) { this.capCount++; if (this.capTick == null) this.capTick = this.tick + 1; } capture(p); };
-    room.grabFlag = (p, team) => { if (p === this.p) { this.grabCount++; if (this.grabTick == null) this.grabTick = this.tick + 1; } grabFlag(p, team); };
+    room.capture = (p) => { if (p === this.p) this.capTicks.push(this.tick + 1); capture(p); };
+    room.grabFlag = (p, team) => { if (p === this.p) this.grabTicks.push(this.tick + 1); grabFlag(p, team); };
     room.pop = (p, killer, o) => { if (p === this.p && !p.dead) this.pops++; pop(p, killer, o); };
 
     room.state = tp.C.STATES.ACTIVE;
@@ -104,18 +84,18 @@ class Sim {
     this.client = { emit() {}, disconnect() {} };
     room.addClient(this.client, { id: 'gltp-ai', name: opts.name || 'GLTP-AI' }, { team: 1 });
     this.p = room.players[this.client.playerId];
-    wallsOutOfBodyList(room.world);
+    if (!opts.plain) wallsOutOfBodyList(room.world);
     room.startPowerups();
     this.spawn = { x: this.p.body.GetPosition().x, y: this.p.body.GetPosition().y };
     this.jumpLimit = room.jumpLimit();
+    this.gates = gateGroups(level.map.tiles);
   }
 
   // keys: bit mask (1 left, 2 right, 4 up, 8 down) held from the next tick on
   setKeys(keys) {
     const changed = keys ^ this.keys;
     if (!changed) return;
-    for (const k of KEY_NAMES) {
-      const bit = KEY_BITS[k];
+    for (const [k, bit] of Object.entries(KEY_BITS)) {
       if (!(changed & bit)) continue;
       this.keySeq++;
       this.room.handle(this.client, (keys & bit) ? 'keydown' : 'keyup', { k, t: this.keySeq });
@@ -125,13 +105,7 @@ class Sim {
 
   step() {
     this.t += STEP_MS;
-    this.runTimers();
-    this.room.step();
-    this.tick++;
-  }
-
-  runTimers() {
-    for (;;) {
+    for (;;) { // timers due now, in order
       let next = null;
       for (const h of this.timers) if (!h.cancelled && h.at <= this.t + 1e-6 && (!next || h.at < next.at || (h.at === next.at && h.seq < next.seq))) next = h;
       if (!next) break;
@@ -139,35 +113,34 @@ class Sim {
       next.fn();
     }
     if (this.timers.length > 64) this.timers = this.timers.filter((h) => !h.cancelled);
+    this.room.step();
+    this.tick++;
   }
 
   get dead() { return this.p.dead; }
-  get capped() { return this.capTick != null; }
   get flag() { return this.p.flag || 0; }
   get jumpsLeft() { return this.p.jumpsLeft === undefined ? this.jumpLimit : this.p.jumpsLeft; }
 
   // the ball in metres and m/s (null while dead)
   ball() {
-    const p = this.p;
-    if (p.dead) return null;
-    const pos = p.body.GetPosition(), v = p.body.GetLinearVelocity();
+    if (this.p.dead) return null;
+    const pos = this.p.body.GetPosition(), v = this.p.body.GetLinearVelocity();
     return { x: pos.x, y: pos.y, vx: v.x, vy: v.y };
   }
 
-  // gates' current colours, one character per gate group ("" if the map has none)
+  // every gate's current colour, one character per gate ("" on maps without gates)
   gateState() {
     let s = '';
-    for (const [x, y] of this.gateGroups) s += Math.round((Number(this.room.tiles[x][y]) - 9) * 10);
+    for (const [x, y] of this.gates) s += Math.round((Number(this.room.tiles[x][y]) - 9) * 10);
     return s;
   }
 }
 
 // Speed, with exactly the same results. Every step Box2D walks its whole body list (thousands of wall
-// tiles) to clear each body's island marker and, in SolveTOI, its sweep time, then skips the walls
-// because they never move. A wall's island marker is already cleared after every island it joins, and
+// tiles) to reset each body's island marker and, in SolveTOI, its sweep time, then skips the walls
+// because they never move. A wall's island marker is already reset after every island it joins, and
 // its sweep time only matters while it touches something. So walls leave the body list, and SolveTOI
-// resets the sweep of walls in a contact, which is everything the full walk did that can change a result.
-// (Contacts, the broadphase and the ball's own place in the list are untouched.)
+// resets the sweep of walls in a contact: everything the full walk did that can change a result.
 function wallsOutOfBodyList(world) {
   const Body = tp.Box2D.Dynamics.b2Body;
   const STATIC = Body.b2_staticBody, ISLAND = Body.e_islandFlag;
@@ -185,9 +158,7 @@ function wallsOutOfBodyList(world) {
   const solveTOI = world.SolveTOI;
   world.SolveTOI = function (step) {
     for (let c = this.m_contactList; c; c = c.m_next) {
-      const a = c.m_fixtureA.m_body, b = c.m_fixtureB.m_body;
-      if (a.GetType() === STATIC) { a.m_flags &= ~ISLAND; a.m_sweep.t0 = 0; }
-      if (b.GetType() === STATIC) { b.m_flags &= ~ISLAND; b.m_sweep.t0 = 0; }
+      for (const b of [c.m_fixtureA.m_body, c.m_fixtureB.m_body]) if (b.GetType() === STATIC) { b.m_flags &= ~ISLAND; b.m_sweep.t0 = 0; }
     }
     return solveTOI.call(this, step);
   };
@@ -227,8 +198,6 @@ function* keysPerTick(rle) {
   for (let i = 0; i < rle.length; i += 2) for (let n = 0; n < rle[i + 1]; n++) yield rle[i];
 }
 
-function keysLength(rle) { let n = 0; for (let i = 1; i < rle.length; i += 2) n += rle[i]; return n; }
-
 // the first n ticks of a key sequence
 function sliceKeys(rle, n) {
   const out = [];
@@ -250,7 +219,7 @@ function concatKeys(a, b) {
   return out;
 }
 
-// play a key sequence from the start; onTick(sim) is called after every tick
+// play a key sequence from the start; onTick(sim) runs after every tick (return false to stop)
 function play(level, rle, opts = {}, onTick) {
   const sim = new Sim(level, opts);
   for (const k of keysPerTick(rle)) {
@@ -261,4 +230,4 @@ function play(level, rle, opts = {}, onTick) {
   return sim;
 }
 
-module.exports = { Sim, KEY_BITS, STEP_MS, encodeKeys, keysPerTick, keysLength, sliceKeys, concatKeys, play, rng };
+module.exports = { Sim, KEY_BITS, encodeKeys, keysPerTick, sliceKeys, concatKeys, play, rng };

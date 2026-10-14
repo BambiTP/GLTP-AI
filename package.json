@@ -1,10 +1,10 @@
 {
   "name": "gltp-ai",
   "version": "0.1.0",
-  "description": "Bots that learn to beat TagPro gravity maps: NEAT (MarI/O style) and Go-Explore, on tagpro-local's real physics",
-  "main": "src/index.js",
+  "description": "Paste a TagPro gravity map preset and a bot explores it until it beats the map (Go-Explore on tagpro-local's real physics)",
+  "main": "app.js",
   "scripts": {
-    "start": "node cli.js view",
+    "start": "node app.js",
     "test": "node test/run.js"
   },
   "dependencies": {

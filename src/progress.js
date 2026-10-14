@@ -1,8 +1,9 @@
-// progress.js - walking distances over a map's open tiles (see goals.js for how they're used).
+// progress.js - how far along the map a run is: walking distance to the flag, then back to cap.
 //
 // A field holds, for every tile, how far it is from the nearest target tile: along open tiles, in 8
 // directions without cutting wall corners, and through portals. So it's a path length, not a
-// straight line.
+// straight line (it can't know what's too high to jump, which is why the explorer only leans on it
+// lightly).
 const { T } = require('./tagpro');
 
 const TILE = 0.4;
@@ -15,25 +16,24 @@ function passable(t) {
   return true;
 }
 
-// Dijkstra from every target tile outwards; isTarget(tile, x, y)
-function field(map, isTarget, jumps) {
+// Dijkstra from every target tile outwards
+function field(map, isTarget) {
   const tiles = map.tiles, W = tiles.length, H = tiles[0].length;
   const D = new Float64Array(W * H).fill(Infinity);
   const open = new Uint8Array(W * H);
   for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) open[x * H + y] = passable(tiles[x][y]) ? 1 : 0;
-  // teleports, reversed: arriving at a portal's destination means the portal tile is one step further;
-  // `jumps` adds more ({ from: [[x, y]...], to: [x, y], cost }), e.g. popping and respawning
+  // portals, reversed: arriving at a portal's destination means the portal tile is one step further
   const into = new Map();
-  const edge = (fromIdx, toIdx, cost) => { if (!into.has(toIdx)) into.set(toIdx, []); into.get(toIdx).push([fromIdx, cost]); };
   for (const [k, conf] of Object.entries(map.portals || {})) {
     if (!conf || !conf.destination) continue;
     const [px, py] = k.split(',').map(Number), d = conf.destination;
     if (!(d.x >= 0 && d.y >= 0 && d.x < W && d.y < H)) continue;
-    edge(px * H + py, d.x * H + d.y, 1);
+    const to = d.x * H + d.y;
+    if (!into.has(to)) into.set(to, []);
+    into.get(to).push(px * H + py);
   }
-  for (const j of jumps || []) for (const [fx, fy] of j.from) edge(fx * H + fy, j.to[0] * H + j.to[1], j.cost);
   const heap = new Heap();
-  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (isTarget(tiles[x][y], x, y)) { D[x * H + y] = 0; heap.push(0, x * H + y); }
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (isTarget(Number(tiles[x][y]))) { D[x * H + y] = 0; heap.push(0, x * H + y); }
   while (heap.size) {
     const [d, i] = heap.pop();
     if (d > D[i]) continue;
@@ -48,8 +48,8 @@ function field(map, isTarget, jumps) {
       const nd = d + (dx && dy ? SQRT2 : 1);
       if (nd < D[j]) { D[j] = nd; heap.push(nd, j); }
     }
-    for (const [j, cost] of into.get(i) || []) {
-      const nd = d + cost;
+    for (const j of into.get(i) || []) {
+      const nd = d + 1;
       if (nd < D[j]) { D[j] = nd; heap.push(nd, j); }
     }
   }
@@ -68,6 +68,52 @@ function distAt(f, x, y) {
     if (v < best) best = v;
   }
   return best;
+}
+
+// A red ball's goal: grab the blue (or yellow) flag, cap it on the red flag (a yellow one on a red
+// endzone), as many times as the map needs. progress() is in tiles, from 0 at spawn to `total`.
+class Goal {
+  constructor(level, spawn) {
+    const map = level.map;
+    this.caps = level.caps;
+    this.toFlag = field(map, (t) => t === T.BLUE_FLAG || t === T.BLUE_POTATO || t === T.YELLOW_FLAG);
+    this.toRedFlag = field(map, (t) => t === T.RED_FLAG || t === T.RED_POTATO);
+    this.toEndzone = field(map, (t) => Math.floor(t) === T.RED_ENDZONE);
+    let leg = Infinity; // flag to cap
+    map.tiles.forEach((col, x) => col.forEach((t, y) => {
+      if (this.toFlag.D[x * this.toFlag.H + y] !== 0) return;
+      const f = this.capField(Number(t) === T.YELLOW_FLAG ? 3 : 2);
+      leg = Math.min(leg, f.D[x * f.H + y]);
+    }));
+    const first = distAt(this.toFlag, spawn.x, spawn.y);
+    this.leg = Number.isFinite(leg) ? leg : 0;
+    this.first = Number.isFinite(first) ? first : 0;
+    this.lap = this.first + this.leg;      // spawn -> flag -> cap
+    this.again = 2 * this.leg;             // cap -> flag -> cap, for maps that need more caps
+    this.total = this.lap + (this.caps - 1) * this.again;
+  }
+
+  capField(flag) { return flag === 3 ? this.toEndzone : this.toRedFlag; }
+
+  done(sim) { return sim.capTicks.length >= this.caps; }
+
+  // the tick the map was finished on (null if not yet)
+  finishTick(sim) { return this.done(sim) ? sim.capTicks[this.caps - 1] : null; }
+
+  progress(sim) {
+    const k = sim.capTicks.length;
+    if (k >= this.caps) return this.total;
+    const base = k === 0 ? 0 : this.lap + (k - 1) * this.again;
+    const toGrab = k === 0 ? this.first : this.leg;
+    const b = sim.ball();
+    if (!b) return base;
+    if (!sim.flag) {
+      const d = distAt(this.toFlag, b.x, b.y);
+      return base + (Number.isFinite(d) ? Math.max(0, toGrab - d) : 0);
+    }
+    const d = distAt(this.capField(sim.flag), b.x, b.y);
+    return base + toGrab + (Number.isFinite(d) ? Math.max(0, this.leg - d) : 0);
+  }
 }
 
 class Heap {
@@ -96,4 +142,4 @@ class Heap {
   }
 }
 
-module.exports = { field, distAt, TILE };
+module.exports = { Goal, field, distAt, TILE };
