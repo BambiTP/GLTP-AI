@@ -120,7 +120,7 @@ class Dashboard {
     if (p === '/api/runs') return this.json(res, { runs: Run.list(), live: this.trainer && this.trainer.run ? this.trainer.run.id : null });
     if (p === '/api/maps') {
       return this.json(res, {
-        practice: practiceMaps(), gltp: listGltp(), proxy: !!configuredProxy(this.proxy), pack: defaultPack(),
+        practice: practiceMaps(), gltp: listGltp(), proxy: new URL(configuredProxy(this.proxy).replace(/\{\w+\}/g, 'x')).host, pack: defaultPack(),
         defaults: { neat: require('./train-neat').DEFAULTS, explore: require('./train-explore').DEFAULTS },
       });
     }

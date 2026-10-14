@@ -15,11 +15,18 @@ const FM = 'https://fortunatemaps.herokuapp.com';
 
 // ---------- downloading ----------
 
-// The proxy comes from --proxy, the FM_PROXY environment variable, or "proxy" in config.json.
-// "{url}" in it is replaced by the encoded Fortunate Maps URL; without it the URL is appended
-// (encoded after "=" like "...?url=", as is for prefix proxies like "https://proxy.example/").
+// The proxy comes from --proxy, the FM_PROXY environment variable, or "proxy" in config.json, and by
+// default is BamBall's Cloudflare Worker (worker/src/index.js in BambiTP/BamBall), which relays
+// Fortunate Maps with CORS headers. In a proxy URL:
+//   {id} and {kind} (png or json) are filled in: ".../api/fortunatemaps/{id}/{kind}"
+//   {url} is replaced by the encoded Fortunate Maps URL: "https://proxy.example/?url={url}"
+//   otherwise the Fortunate Maps URL is appended (encoded after "=", as is for prefix proxies)
+const DEFAULT_PROXY = 'https://api.bamball.workers.dev/api/fortunatemaps/{id}/{kind}';
+
 function proxyUrl(proxy, url) {
   if (!proxy) return url;
+  const m = /\/(png|json)\/(\d+)$/.exec(url);
+  if (m && (proxy.includes('{id}') || proxy.includes('{kind}'))) return proxy.replace('{id}', m[2]).replace('{kind}', m[1]);
   if (proxy.includes('{url}')) return proxy.replace('{url}', encodeURIComponent(url));
   if (proxy.endsWith('=')) return proxy + encodeURIComponent(url);
   return proxy + url;
@@ -28,7 +35,11 @@ function proxyUrl(proxy, url) {
 function configuredProxy(cli) {
   if (cli) return cli;
   if (process.env.FM_PROXY) return process.env.FM_PROXY;
-  try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8')).proxy || null; } catch (e) { return null; }
+  try {
+    const c = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8'));
+    if (c.proxy) return c.proxy;
+  } catch (e) { /* no config.json */ }
+  return DEFAULT_PROXY;
 }
 
 async function fetchMap(id, proxy) {
@@ -39,7 +50,10 @@ async function fetchMap(id, proxy) {
   const got = {};
   for (const ext of ['png', 'json']) {
     const url = proxyUrl(proxy, `${FM}/${ext}/${id}`);
-    const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    let r;
+    try { r = await fetch(url, { signal: AbortSignal.timeout(30000) }); } catch (e) {
+      throw new Error(`map ${id}: couldn't reach ${new URL(url).host} (${(e.cause && e.cause.message) || e.message})`);
+    }
     if (!r.ok) throw new Error(`map ${id}: ${ext} download failed (HTTP ${r.status} from ${new URL(url).host})`);
     const body = Buffer.from(await r.arrayBuffer());
     if (ext === 'png' && body.toString('latin1', 1, 4) !== 'PNG') throw new Error(`map ${id}: the proxy didn't return a PNG (no such map?)`);
@@ -159,4 +173,4 @@ function practiceMaps() {
   return fs.existsSync(MAP_DIR) ? fs.readdirSync(MAP_DIR).filter((f) => f.endsWith('.txt')).map((f) => f.slice(0, -4)) : [];
 }
 
-module.exports = { loadLevel, fetchMap, configuredProxy, proxyUrl, listGltp, practiceMaps, fromText, MAP_DIR };
+module.exports = { loadLevel, fetchMap, configuredProxy, proxyUrl, DEFAULT_PROXY, listGltp, practiceMaps, fromText, MAP_DIR };

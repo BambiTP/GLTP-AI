@@ -23,8 +23,9 @@ Goals (both trainers):
 Go-Explore:  --explore-ticks 90 --hold-mean 6 --frontier 4 --batch 0 --max-ticks 10800
 NEAT:        --population 300 --think-every 2 --patience 180 --max-ticks 3600 --end-on-pop true
 Both:        --max-gens N --seed 1 --workers N (default: one per CPU) --port 8080 --no-view
-Maps:        --proxy URL (or FM_PROXY, or "proxy" in config.json); "{url}" in it is replaced by the
-             encoded Fortunate Maps URL, otherwise the URL is appended
+Maps:        downloaded through BamBall's worker (api.bamball.workers.dev) unless you set another
+             proxy: --proxy URL, FM_PROXY, or "proxy" in config.json. In it {id} and {kind} (png or
+             json) are filled in; or {url} becomes the encoded Fortunate Maps URL
 `;
 
 function parseArgs(argv) {
@@ -50,7 +51,7 @@ async function main() {
 
   if (cmd === 'fetch') {
     const proxy = maps.configuredProxy(opt.proxy);
-    if (!proxy) console.warn('no proxy set: trying Fortunate Maps directly (see --proxy)');
+    console.log('through', proxy);
     for (const id of pos) {
       try { console.log(id, (await maps.fetchMap(id, proxy)) ? 'downloaded' : 'already here'); } catch (e) { console.error(id, e.message); process.exitCode = 1; }
     }

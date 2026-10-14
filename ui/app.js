@@ -284,7 +284,7 @@ function startSetup() {
 
 function renderMapLists() {
   const m = S.maps;
-  $('proxy-hint').textContent = m.proxy ? 'proxy set ✓' : 'no proxy: only downloaded maps';
+  $('proxy-hint').textContent = `maps via ${m.proxy}`;
   $('tab-practice').innerHTML = m.practice.map((k) => `<button data-map="${esc(k)}"><span class="n">${esc(k)}</span><span class="d">practice</span></button>`).join('');
   renderGltpList();
 }

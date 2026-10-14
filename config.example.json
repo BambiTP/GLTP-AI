@@ -1,1 +1,1 @@
-{ "proxy": "https://your-cors-proxy.example/?url={url}" }
+{ "proxy": "https://api.bamball.workers.dev/api/fortunatemaps/{id}/{kind}" }

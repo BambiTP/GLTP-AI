@@ -1,6 +1,6 @@
 // node test/run.js - quick checks that the simulator, plans, trainers and replays hold together
 const assert = require('assert');
-const { loadLevel, fromText, proxyUrl } = require('../src/maps');
+const { loadLevel, fromText, proxyUrl, DEFAULT_PROXY } = require('../src/maps');
 const { Sim, play, encodeKeys, keysLength, sliceKeys, concatKeys } = require('../src/sim');
 const { Plan, parseSteps, stepsText } = require('../src/goals');
 const { buildReplay } = require('../src/replay');
@@ -63,6 +63,7 @@ async function check(name, fn) {
     assert.strictEqual(proxyUrl('https://p.example/?url={url}', 'https://a/b?c'), 'https://p.example/?url=https%3A%2F%2Fa%2Fb%3Fc');
     assert.strictEqual(proxyUrl('https://p.example/?u=', 'https://a/b'), 'https://p.example/?u=https%3A%2F%2Fa%2Fb');
     assert.strictEqual(proxyUrl('https://p.example/', 'https://a/b'), 'https://p.example/https://a/b');
+    assert.strictEqual(proxyUrl(DEFAULT_PROXY, 'https://fortunatemaps.herokuapp.com/png/88528'), 'https://api.bamball.workers.dev/api/fortunatemaps/88528/png');
   });
 
   let run;

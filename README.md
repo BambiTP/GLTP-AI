@@ -21,12 +21,13 @@ npm install            # Node 18+; installs tagpro-local from GitHub
 node cli.js view       # dashboard at http://localhost:8080
 ```
 
-Fortunate Maps is reached through your CORS proxy. Set it once in `config.json` (copy
-`config.example.json`), or with `FM_PROXY=...` or `--proxy ...`. `{url}` in it is replaced by the
-encoded Fortunate Maps URL. Without `{url}` the URL is appended.
+Maps come from Fortunate Maps through BamBall's CORS proxy, `api.bamball.workers.dev` (the Cloudflare
+Worker in [BamBall](https://github.com/BambiTP/BamBall)'s `worker/`). Nothing to set up. To use another
+proxy, set it in `config.json`, `FM_PROXY=...` or `--proxy ...`. In the URL, `{id}` and `{kind}`
+(`png` or `json`) are filled in, or `{url}` becomes the encoded Fortunate Maps URL:
 
 ```json
-{ "proxy": "https://your-proxy.example/?url={url}" }
+{ "proxy": "https://api.bamball.workers.dev/api/fortunatemaps/{id}/{kind}" }
 ```
 
 ## Use
