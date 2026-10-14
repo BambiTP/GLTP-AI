@@ -17,6 +17,9 @@ const DEFAULTS = {
   holdMean: 6,        // keys are held ~6 ticks on average before picking new ones
   batch: 0,           // explorations per generation (0 = 8 per worker)
   frontier: 4,        // how strongly picks favour cells further along the plan
+  stall: 25,          // after this many generations without getting further (or faster), picks
+                      // fade from "furthest along" to "least visited" over as many again: the walking
+                      // distance can point the wrong way (portals, gates, climbs), curiosity can't
   maxTicks: 3 * 60 * 60, // cells reached after 3 minutes aren't explored from
   seed: 1,
   maxGens: Infinity,
@@ -48,6 +51,8 @@ class ExploreTrainer extends EventEmitter {
     const b = sim.ball();
     this.add({ key: cellKey(sim, state, false), keys: [], ticks: 0, progress: this.plan.progress(state, sim), x: Math.round(b.x * 100), y: Math.round(b.y * 100), flag: 0, step: state.step }, 0);
     this.gen = 0;
+    this.lastGain = 0;      // the last generation that got further, or finished faster
+    this.bestSeen = -Infinity;
     this.emit('start', this.run.meta);
     try {
       while (!this.stopped && this.gen < c.maxGens) await this.generation();
@@ -69,15 +74,24 @@ class ExploreTrainer extends EventEmitter {
     this.archive.set(cell.key, Object.assign({ chosen: 0, seen: 1, found: gen }, cell));
   }
 
-  // weighted pick: cells picked less often, and cells further along, come up more
+  // 0 while progress keeps coming; rises to 1 once it has stalled long enough (see DEFAULTS.stall)
+  curiosity() {
+    const k = this.cfg.stall, stalled = this.gen - this.lastGain;
+    return k > 0 ? Math.max(0, Math.min(1, (stalled - k) / k)) : 0;
+  }
+
+  // weighted pick: cells picked less often, cells found lately, and (unless progress has stalled)
+  // cells further along come up more
   choose(n) {
     const cells = [...this.archive.values()].filter((c) => c.key !== 'done' && c.ticks < this.cfg.maxTicks);
     let lo = Infinity, hi = -Infinity;
     for (const c of cells) { lo = Math.min(lo, c.progress); hi = Math.max(hi, c.progress); }
     const span = hi - lo || 1;
+    const pull = this.cfg.frontier * (1 - this.curiosity());
     const w = cells.map((c) => {
       const p = (c.progress - lo) / span;
-      return (1 / Math.sqrt(c.chosen + 1) + 0.5 / Math.sqrt(c.seen + 1)) * (0.1 + this.cfg.frontier * p * p * p);
+      const fresh = this.gen - c.found < 5 ? 2 : 1;
+      return (1 / Math.sqrt(c.chosen + 1) + 0.5 / Math.sqrt(c.seen + 1)) * fresh * (0.1 + pull * p * p * p);
     });
     const total = w.reduce((a, b) => a + b, 0);
     const out = [];
@@ -129,12 +143,16 @@ class ExploreTrainer extends EventEmitter {
 
     const best = this.bestCell();
     const fin = this.archive.get('done');
+    // getting further, or finishing faster, resets the stall clock
+    const score = fin ? 1e6 - fin.time : best.progress;
+    if (score > this.bestSeen + 1e-6) { this.bestSeen = score; this.lastGain = gen; }
     const summary = {
       gen, at: new Date().toISOString(), seconds: (Date.now() - t0) / 1000,
       cells: this.archive.size, added, faster,
       progress: Math.max(0, best.progress) / total, time: fin ? fin.time : null,
       steps: best.key === 'done' ? this.plan.steps.length : best.step,
       grabbed: [...this.archive.values()].some((x) => x.flag),
+      stalled: gen - this.lastGain, curiosity: this.curiosity(),
       explorations: results.length, ticks,
       best: Math.max(0, best.progress) / total, mean: runs.reduce((a, r) => a + r.progress, 0) / runs.length,
     };

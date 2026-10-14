@@ -26,8 +26,8 @@ The page has a **map preset** box and a **pen**:
 1. Paste a group preset (`gZMefGzCggtaiaaaJraaksaaamaaaE`) or a group link with `?preset=` and press
    Load. The bot plays the preset's map with the preset's settings (jumps, acceleration, respawn times…).
    A Fortunate Maps id or a practice map (`steps`, `tower`, `spikes`, `slopes`) works too.
-2. Drag on the map to draw a rough path: from spawn to the flag, and back if you like. Undo with ↶ or
-   Ctrl+Z. No path is fine too.
+2. Optional: drag on the map to draw a rough path, from spawn to the flag and back. Undo with ↶ or
+   Ctrl+Z. Usually you don't need one: the bot finds portals and routes by itself.
 3. Press **Go**. The bot plays the map live: the best route so far in red, the current generation in
    blue. When it finishes, the bar says **Possible ✓** with its time, and it keeps getting faster until
    you press Stop. **Watch in TagPro** plays the best route in the real TagPro client, and **⬇ Replay**
@@ -104,6 +104,7 @@ map's plan** stores it in `plans/<map>.json`, and new runs on that map use it. `
 | | `--hold-mean` | 6 | average ticks a random key combination is held |
 | | `--frontier` | 4 | how strongly picks favour cells further along the plan |
 | | `--batch` | 8 per CPU | explorations per generation |
+| | `--stall` | 25 | generations without getting further (or faster) before picks fade from "furthest along" to "least visited" |
 | NEAT | `--population` | 300 | networks per generation |
 | | `--think-every` | 2 | ticks between key choices (MarI/O: 5 frames) |
 | | `--patience` | 180 | a run ends after this many ticks without progress |

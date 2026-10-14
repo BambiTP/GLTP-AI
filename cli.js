@@ -22,7 +22,7 @@ Goals (both trainers):
                                    default: the map's saved plan (plans/), else its GLTP rules
   --time-from N                    the clock starts when step N (1-based) is done, not at spawn
 
-Go-Explore:  --explore-ticks 90 --hold-mean 6 --frontier 4 --batch 0 --max-ticks 10800
+Go-Explore:  --explore-ticks 90 --hold-mean 6 --frontier 4 --stall 25 --batch 0 --max-ticks 10800
 NEAT:        --population 300 --think-every 2 --patience 180 --max-ticks 3600 --end-on-pop false
 Both:        --max-gens N --seed 1 --workers N (default: one per CPU) --port 8080 --no-view
 Maps:        downloaded through BamBall's worker (api.bamball.workers.dev) unless you set another

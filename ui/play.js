@@ -33,7 +33,7 @@ async function loadMap(code) {
   say('loading ' + code + '…');
   try {
     const map = await api(`/api/level?map=${encodeURIComponent(code)}`);
-    S.map = map; S.strokes = []; S.run = null; S.route = null; S.ghosts = [];
+    S.map = map; S.strokes = []; S.run = null; S.route = null; S.ghosts = []; S.heat = null;
     mapView.moved = false;
     await mapView.setMap(map, pack);
     $('code').value = code;
@@ -256,7 +256,7 @@ function frame(now) {
     S.tick += dt * 60;
     if (S.tick > S.maxTick) S.tick = 0;
     const runs = S.route ? [S.route].concat(S.ghosts) : S.ghosts;
-    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all', spawns: S.map.spawns });
+    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all', spawns: S.map.spawns, heat: S.heat });
     if (S.strokes.length) drawPath(g, 0.35);
   } else {
     mapView.draw(S.map ? { spawns: S.map.spawns, spawn: S.map.spawn } : {});
@@ -311,6 +311,7 @@ async function refresh(force) {
     if (S.run.last) {
       const d = await api(`/api/runs/${S.run.id}/gens/${S.run.last.gen}`);
       S.ghosts = d.runs.slice().sort((a, b) => (b.fitness ?? b.progress) - (a.fitness ?? a.progress)).slice(0, 40);
+      S.heat = d.heat || null; // Go-Explore: everywhere it has been
     }
     S.maxTick = Math.max(S.route ? S.route.path.length * 2 : 0, ...S.ghosts.map((r) => r.path.length * 2)) + 60;
   } catch (e) { /* the next generation will try again */ } finally { refreshing = false; }
@@ -328,7 +329,8 @@ function renderStatus() {
     $('detail').textContent = `proven at generation ${m.solved.gen}` + (m.fastest.gen !== m.solved.gen ? `, fastest at ${m.fastest.gen}` : '') + (S.live ? ` · still looking for faster (gen ${s ? s.gen : 0})` : ` · ${m.status}`);
   } else {
     $('headline').textContent = s ? `${S.live ? 'Learning' : 'Stopped'} · ${Math.round(s.progress * 100)}% of the way` : 'Starting…';
-    $('detail').textContent = s ? `generation ${s.gen} · ${where}` + (m.algo === 'explore' ? ` · ${s.cells.toLocaleString()} places remembered` : ` · ${s.species.length} species`) : '';
+    const curious = s && s.curiosity > 0 ? ` · stuck for ${s.stalled} generations, exploring everywhere` : '';
+    $('detail').textContent = s ? `generation ${s.gen} · ${where}` + (m.algo === 'explore' ? ` · ${s.cells.toLocaleString()} places reached` : ` · ${s.species.length} species`) + curious : '';
   }
   $('stop').hidden = !S.live;
   $('watch').disabled = !S.route;
@@ -374,7 +376,7 @@ $('tagpro-close').addEventListener('click', () => $('tagpro').close());
 $('tagpro').addEventListener('close', () => { $('tagpro-frame').src = 'about:blank'; });
 // editing again after a run: forget the run's view, keep the path
 $('map').addEventListener('pointerdown', (e) => {
-  if (S.run && !S.live && S.pen && e.button === 0 && !space) { S.run = null; S.route = null; S.ghosts = []; routeTag = ''; showEditing(); }
+  if (S.run && !S.live && S.pen && e.button === 0 && !space) { S.run = null; S.route = null; S.ghosts = []; S.heat = null; routeTag = ''; showEditing(); }
 }, true);
 window.addEventListener('resize', () => mapView.fit());
 window.addEventListener('hashchange', () => { const c = decodeURIComponent(location.hash.slice(1)); if (c && !S.live && (!S.map || c !== S.map.key)) loadMap(c); });
