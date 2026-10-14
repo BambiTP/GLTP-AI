@@ -1,4 +1,4 @@
 node_modules/
-runs/
-maps/
+/runs/
+/maps/
 config.json
