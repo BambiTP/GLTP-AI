@@ -82,25 +82,30 @@ function tilesWhere(pred) {
   return out;
 }
 
-// points every `step` tiles along the drawn lines (in drawing order)
+// points every `step` tiles along each drawn line, its start and end included. Lines are kept apart:
+// the gap between the end of one line and the start of the next is a teleport (a portal, or popping
+// and respawning), not a walk, so no waypoints go in it
 function resample(strokes, step) {
   const out = [];
-  let carry = 0, prev = null;
   for (const line of strokes) {
-    for (const p of line) {
-      if (!prev) { out.push(p); prev = p; continue; }
-      let d = Math.hypot(p.x - prev.x, p.y - prev.y), from = prev;
+    if (!line.length) continue;
+    out.push(line[0]);
+    let carry = 0;
+    for (let i = 1; i < line.length; i++) {
+      let from = line[i - 1];
+      const p = line[i];
+      let d = Math.hypot(p.x - from.x, p.y - from.y);
       while (carry + d >= step) {
         const k = (step - carry) / d;
         const q = { x: from.x + (p.x - from.x) * k, y: from.y + (p.y - from.y) * k };
         out.push(q);
         d -= step - carry; carry = 0; from = q;
       }
-      carry += d; prev = p;
+      carry += d;
     }
+    const last = line[line.length - 1], prev = out[out.length - 1];
+    if (Math.hypot(last.x - prev.x, last.y - prev.y) > step / 3) out.push(last);
   }
-  const last = strokes[strokes.length - 1];
-  if (last && last.length) out.push(last[last.length - 1]);
   return out;
 }
 
@@ -215,10 +220,22 @@ function drawPath(g, alpha) {
       g.stroke();
     }
   }
+  // teleports: the gaps between one line's end and the next line's start
+  g.setLineDash([3, 6]);
+  g.strokeStyle = `rgba(200,125,255,${0.9 * alpha})`; g.lineWidth = 2;
+  for (let i = 1; i < S.strokes.length; i++) {
+    const a = S.strokes[i - 1][S.strokes[i - 1].length - 1], b = S.strokes[i][0];
+    if (!a || !b || Math.hypot(a.x - b.x, a.y - b.y) < 1) continue;
+    g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke();
+    const fs = Math.min(14, Math.max(10, 11 * k * 1.2));
+    g.font = `700 ${fs}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = `rgba(200,125,255,${alpha})`;
+    g.fillText('teleport', (X(a) + X(b)) / 2, (Y(a) + Y(b)) / 2 - fs);
+  }
+  g.setLineDash([]);
   // arrows along the way, so the direction is clear
   g.fillStyle = `rgba(255,214,10,${alpha})`;
-  for (const p of resample(S.strokes, 4).slice(1)) {
-    const line = S.strokes.flat();
+  for (const line of S.strokes) for (const p of resample([line], 4).slice(1)) {
     let i = 0, bd = Infinity;
     line.forEach((q, j) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; i = j; } });
     const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
@@ -252,10 +269,10 @@ function frame(now) {
     S.tick += dt * 60;
     if (S.tick > S.maxTick) S.tick = 0;
     const runs = S.route ? [S.route].concat(S.ghosts) : S.ghosts;
-    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all', spawns: S.map.spawns });
+    mapView.draw({ runs, best: S.route ? 0 : -1, tick: S.tick, show: 'all', spawns: S.map.spawns, portals: S.map.portals, portalAlpha: 0.45 });
     if (S.strokes.length) drawPath(g, 0.35);
   } else {
-    mapView.draw(S.map ? { spawns: S.map.spawns, spawn: S.map.spawn } : {});
+    mapView.draw(S.map ? { spawns: S.map.spawns, spawn: S.map.spawn, portals: S.map.portals } : {});
     if (S.map && S.strokes.length) {
       if (!S.plan && !S.stroke) S.plan = planFromPath();
       if (S.plan) drawWaypoints(g, S.plan);

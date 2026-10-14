@@ -74,6 +74,7 @@ async function fetchMap(id, proxy) {
 //   ◣ ◤ ◥ ◢  45° walls (the solid half points that way)
 //   S  red spawn     B  blue flag      R  red flag      Y  yellow flag    E  red endzone
 //   *  spike         +  boost          !  bomb          G  gravity well
+//   1-9 portals: the two tiles with the same digit send the ball to each other
 //
 // Optional settings go on lines starting with "set ", e.g. "set jumpLimit 3".
 const TEXT_TILES = {
@@ -90,19 +91,25 @@ function fromText(text, name) {
     if (line.trim()) rows.push([...line]);
   }
   const W = Math.max(...rows.map((r) => r.length)), H = rows.length;
-  const tiles = [], red = [];
+  const tiles = [], red = [], pairs = {}, portals = {};
   for (let x = 0; x < W; x++) {
     tiles[x] = [];
     for (let y = 0; y < H; y++) {
       const ch = rows[y][x] ?? ' ';
+      if (/[1-9]/.test(ch)) { tiles[x][y] = 13; (pairs[ch] = pairs[ch] || []).push({ x, y }); continue; }
       if (!(ch in TEXT_TILES)) throw new Error(`${name}: unknown map character "${ch}" at ${x},${y}`);
       tiles[x][y] = TEXT_TILES[ch];
       if (ch === 'S') red.push({ x, y, radius: 0, weight: 1 });
     }
   }
+  for (const [d, ends] of Object.entries(pairs)) {
+    if (ends.length !== 2) throw new Error(`${name}: portal ${d} needs exactly two ends (has ${ends.length})`);
+    portals[ends[0].x + ',' + ends[0].y] = { destination: ends[1], cooldown: 0 };
+    portals[ends[1].x + ',' + ends[1].y] = { destination: ends[0], cooldown: 0 };
+  }
   return {
     map: {
-      tiles, info: { name, author: 'GLTP-AI practice' }, switches: {}, fields: {}, portals: {},
+      tiles, info: { name, author: 'GLTP-AI practice' }, switches: {}, fields: {}, portals,
       marsballs: [], spawnPoints: red.length ? { red } : {}, gravity: true,
     },
     settings,

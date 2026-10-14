@@ -78,7 +78,19 @@ class Plan {
     this.steps = validate(steps, map);
     this.timeFrom = timeFrom;
     const tiles = map.tiles;
-    const grab = field(map, (t) => GRAB_TILES.includes(Number(t)));
+    // Popping is a teleport too: from any tile next to a spike, back to spawn after the respawn wait
+    // (counted as the tiles a ball covers at top speed meanwhile). It drops a held flag, so it only
+    // counts before the first grab.
+    const respawn = Number(level.settings.playerRespawnTime);
+    const popCost = 2 + (Number.isFinite(respawn) ? respawn : 3000) / 1000 * 6;
+    const nearSpikes = [];
+    for (let x = 0; x < tiles.length; x++) for (let y = 0; y < tiles[0].length; y++) {
+      if (Number(tiles[x][y]) !== T.SPIKE) continue;
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (tiles[x + dx] && tiles[x + dx][y + dy] !== undefined && Number(tiles[x + dx][y + dy]) !== T.SPIKE) nearSpikes.push([x + dx, y + dy]);
+    }
+    const pop = nearSpikes.length ? [{ from: nearSpikes, to: [Math.round(spawn.x / TILE), Math.round(spawn.y / TILE)], cost: popCost }] : [];
+    const firstGrab = this.steps.findIndex((s) => s.type === 'grab');
+    const grab = field(map, (t) => GRAB_TILES.includes(Number(t)), pop);
     const capFlag = field(map, (t) => [T.RED_FLAG, T.RED_POTATO].includes(Number(t)));
     const capZone = field(map, (t) => Math.floor(Number(t)) === T.RED_ENDZONE);
     this.capFor = (flag) => (flag === 3 ? capZone : capFlag);
@@ -97,12 +109,13 @@ class Plan {
     this.seg = [];
     this.cum = [0];
     let at = { x: spawn.x, y: spawn.y };
-    for (const s of this.steps) {
+    for (const [i, s] of this.steps.entries()) {
+      const jumps = firstGrab < 0 || i < firstGrab ? pop : [];
       let f;
       if (s.type === 'grab') f = grab;
       else if (s.type === 'cap') f = null; // depends on the flag held; see dist()
-      else if (s.type === 'reach') f = field(map, (t, x, y) => Math.hypot(x - s.x, y - s.y) <= s.r + 1e-9);
-      else f = field(map, (t, x, y) => x === s.x && y === s.y);
+      else if (s.type === 'reach') f = field(map, (t, x, y) => Math.hypot(x - s.x, y - s.y) <= s.r + 1e-9, jumps);
+      else f = field(map, (t, x, y) => x === s.x && y === s.y, jumps);
       this.fields.push(f);
       const len = f ? distAt(f, at.x, at.y) : Math.min(distAt(capFlag, at.x, at.y), distAt(capZone, at.x, at.y));
       const d = Number.isFinite(len) ? len : 0;

@@ -228,6 +228,7 @@ class MapView {
     g.drawImage(this.bg, this.view.ox, this.view.oy, this.W * TS * this.view.scale, this.H * TS * this.view.scale);
     if (o.heat) this.drawHeat(o.heat);
     if (o.spawns) this.drawSpawns(o.spawns, o.spawn);
+    if (o.portals) this.drawPortals(o.portals, o.portalAlpha ?? 1);
     if (o.plan) this.drawPlan(o.plan, o.planTargets, o.editing, o.insertAt);
     if (o.runs) this.drawRuns(o);
     if (o.editing && this.hover) {
@@ -261,6 +262,30 @@ class MapView {
       g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.75)'; g.fillStyle = '#fff';
       g.strokeText('SPAWN', this.bx(px), this.by(py) - 21 * k);
       g.fillText('SPAWN', this.bx(px), this.by(py) - 21 * k);
+    }
+    g.restore();
+  }
+
+  // a curved arrow from each portal to where it sends the ball
+  drawPortals(portals, alpha) {
+    const g = this.ctx, k = this.view.scale;
+    g.save();
+    g.globalAlpha = alpha;
+    for (const p of portals) {
+      if (!p.to) continue;
+      const x0 = this.sx(p.x * TS + TS / 2), y0 = this.sy(p.y * TS + TS / 2);
+      const x1 = this.sx(p.to.x * TS + TS / 2), y1 = this.sy(p.to.y * TS + TS / 2);
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, len = Math.hypot(x1 - x0, y1 - y0) || 1;
+      const bend = Math.min(80, len * 0.25), cx = mx - (y1 - y0) / len * bend, cy = my + (x1 - x0) / len * bend;
+      const color = p.team === 'red' ? '255,110,110' : p.team === 'blue' ? '110,170,255' : '200,125,255';
+      g.strokeStyle = `rgba(${color},.9)`; g.lineWidth = Math.min(3, Math.max(1.5, 2 * k));
+      g.setLineDash([Math.min(8, 5 * k + 2), Math.min(6, 4 * k + 2)]);
+      g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(cx, cy, x1, y1); g.stroke();
+      g.setLineDash([]);
+      // arrowhead along the curve's end direction
+      const ang = Math.atan2(y1 - cy, x1 - cx), r = Math.min(12, Math.max(6, 9 * k));
+      g.fillStyle = `rgba(${color},1)`;
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x1 - r * Math.cos(ang - 0.45), y1 - r * Math.sin(ang - 0.45)); g.lineTo(x1 - r * Math.cos(ang + 0.45), y1 - r * Math.sin(ang + 0.45)); g.closePath(); g.fill();
     }
     g.restore();
   }

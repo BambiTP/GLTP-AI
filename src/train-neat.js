@@ -11,7 +11,7 @@ const DEFAULTS = {
   maxTicks: 60 * 60,  // a run is cut off after a minute
   patience: 3 * 60,   // ... or after 3 s without getting further
   thinkEvery: 2,      // the network picks keys every 2 ticks (MarI/O: every 5 frames)
-  endOnPop: true,     // popping ends the run
+  endOnPop: false,    // popping ends the run (off: a pop respawns, which can be a way back to spawn)
   seed: 1,
   maxGens: Infinity,
   workers: 0,         // 0 = one per CPU

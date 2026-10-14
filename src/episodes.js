@@ -115,7 +115,8 @@ function explore(level, plan, task) {
   const random = rng(task.seed);
   const wsum = ACTION_WEIGHT.reduce((a, b) => a + b, 0);
   let action = sim.keys, hold = 0;
-  while (sim.tick - start < task.exploreTicks && !plan.finished(state) && !sim.dead) {
+  // popping doesn't end an exploration: respawning is a teleport back to spawn
+  while (sim.tick - start < task.exploreTicks && !plan.finished(state)) {
     if (hold <= 0) {
       let r = random() * wsum, i = 0;
       while ((r -= ACTION_WEIGHT[i]) > 0) i++;

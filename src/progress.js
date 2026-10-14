@@ -16,21 +16,22 @@ function passable(t) {
 }
 
 // Dijkstra from every target tile outwards; isTarget(tile, x, y)
-function field(map, isTarget) {
+function field(map, isTarget, jumps) {
   const tiles = map.tiles, W = tiles.length, H = tiles[0].length;
   const D = new Float64Array(W * H).fill(Infinity);
   const open = new Uint8Array(W * H);
   for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) open[x * H + y] = passable(tiles[x][y]) ? 1 : 0;
-  // portal edges, reversed: arriving at dest means the portal tile is one step further
+  // teleports, reversed: arriving at a portal's destination means the portal tile is one step further;
+  // `jumps` adds more ({ from: [[x, y]...], to: [x, y], cost }), e.g. popping and respawning
   const into = new Map();
+  const edge = (fromIdx, toIdx, cost) => { if (!into.has(toIdx)) into.set(toIdx, []); into.get(toIdx).push([fromIdx, cost]); };
   for (const [k, conf] of Object.entries(map.portals || {})) {
     if (!conf || !conf.destination) continue;
     const [px, py] = k.split(',').map(Number), d = conf.destination;
     if (!(d.x >= 0 && d.y >= 0 && d.x < W && d.y < H)) continue;
-    const di = d.x * H + d.y;
-    if (!into.has(di)) into.set(di, []);
-    into.get(di).push(px * H + py);
+    edge(px * H + py, d.x * H + d.y, 1);
   }
+  for (const j of jumps || []) for (const [fx, fy] of j.from) edge(fx * H + fy, j.to[0] * H + j.to[1], j.cost);
   const heap = new Heap();
   for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (isTarget(tiles[x][y], x, y)) { D[x * H + y] = 0; heap.push(0, x * H + y); }
   while (heap.size) {
@@ -47,8 +48,8 @@ function field(map, isTarget) {
       const nd = d + (dx && dy ? SQRT2 : 1);
       if (nd < D[j]) { D[j] = nd; heap.push(nd, j); }
     }
-    for (const j of into.get(i) || []) {
-      const nd = d + 1;
+    for (const [j, cost] of into.get(i) || []) {
+      const nd = d + cost;
       if (nd < D[j]) { D[j] = nd; heap.push(nd, j); }
     }
   }

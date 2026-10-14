@@ -207,6 +207,11 @@ class Dashboard {
       tiles: level.map.tiles, spawn: sim.spawn, settings: { mode: level.settings.mode, jumpLimit: level.settings.jumpLimit, accel: level.settings.accel, topspeed: level.settings.topspeed, playerRespawnTime: level.settings.playerRespawnTime },
       // where each team spawns (tiles; radius in tiles): the map's spawn points, or around its flag when it has none
       spawns: { red: sim.room.spawnTiles[1], blue: sim.room.spawnTiles[2] },
+      // portals: where each one sends you (to: null for exit-only ones), red/blue: team-only
+      portals: Object.entries(level.map.portals || {}).map(([k, c]) => {
+        const [x, y] = k.split(',').map(Number), t = Math.floor(Number(level.map.tiles[x] && level.map.tiles[x][y]));
+        return { x, y, to: c && c.destination ? { x: c.destination.x, y: c.destination.y } : null, team: t === 24 ? 'red' : t === 25 ? 'blue' : null };
+      }),
       plan: { steps: P.steps, timeFrom: plan.timeFrom, source: plan.source, text: stepsText(P.steps), total: P.total, seg: P.seg },
       gltpSteps: defaultSteps(level),
     };
