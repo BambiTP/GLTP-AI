@@ -103,43 +103,57 @@ class ExploreTrainer extends EventEmitter {
     return out;
   }
 
-  async generation() {
-    const c = this.cfg, gen = this.gen, t0 = Date.now();
-    const picks = this.choose(this.batch);
-    let done = 0;
-    const results = await Promise.all(picks.map((cell) => {
+  // Workers never wait for each other: every result is folded into the archive the moment it comes
+  // in and the next exploration goes out right away. A generation is just every `batch` results.
+  // (So a seed no longer pins down the exact run, but every route found still replays exactly.)
+  fill() {
+    const c = this.cfg;
+    while (!this.stopped && this.inflight < this.workers.size * 2) {
+      const [cell] = this.choose(1);
       cell.chosen++;
+      this.inflight++;
       const task = { prefix: cell.keys, exploreTicks: c.exploreTicks, holdMean: c.holdMean, seed: Math.floor(this.random() * 2 ** 31) };
-      return this.workers.run('explore', task).then((r) => {
-        done++;
-        if (done % 8 === 0 || done === picks.length) this.emit('progress', { gen, done, of: picks.length });
-        return r;
-      });
-    }));
+      this.workers.run('explore', task).then((r) => {
+        this.inflight--;
+        this.collect(cell, r);
+        this.fill();
+      }, (e) => { this.failed = e; if (this.wake) this.wake(); });
+    }
+  }
 
-    let added = 0, faster = 0, ticks = 0;
-    const runs = [];
-    const total = this.plan.total || 1;
-    results.forEach((r, i) => {
-      const from = picks[i];
-      ticks += r.ticks;
-      let best = from.progress;
-      for (const f of r.cells) {
-        best = Math.max(best, f.progress);
-        const at = r.start + f.at;
-        const had = this.archive.get(f.key);
-        // the finished cell is ranked by the plan's clock, every other cell by ticks from spawn
-        const better = had && (f.key === 'done' ? f.time < had.time : at < had.ticks);
-        if (had && !better) { had.seen++; continue; }
-        const keys = concatKeys(from.keys, sliceKeys(r.explored, f.at));
-        if (had) { had.seen++; Object.assign(had, { keys, ticks: at, time: f.time, progress: f.progress, x: f.x, y: f.y }); faster++; }
-        else { this.add({ key: f.key, keys, ticks: at, time: f.time, progress: f.progress, x: f.x, y: f.y, flag: f.flag, step: f.step }, gen); added++; }
-      }
-      runs.push({
-        from: from.key, start: r.start, ticks: r.ticks, progress: Math.max(0, best) / total, time: r.time,
-        steps: r.steps, grabTick: r.grabTick, capTick: r.capTick, pops: r.pops, path: r.path,
-      });
+  collect(from, r) {
+    const g = this.cur, total = this.plan.total || 1;
+    g.ticks += r.ticks;
+    let best = from.progress;
+    for (const f of r.cells) {
+      best = Math.max(best, f.progress);
+      const at = r.start + f.at;
+      const had = this.archive.get(f.key);
+      // the finished cell is ranked by the plan's clock, every other cell by ticks from spawn
+      const better = had && (f.key === 'done' ? f.time < had.time : at < had.ticks);
+      if (had && !better) { had.seen++; continue; }
+      const keys = concatKeys(from.keys, sliceKeys(r.explored, f.at));
+      if (had) { had.seen++; Object.assign(had, { keys, ticks: at, time: f.time, progress: f.progress, x: f.x, y: f.y }); g.faster++; }
+      else { this.add({ key: f.key, keys, ticks: at, time: f.time, progress: f.progress, x: f.x, y: f.y, flag: f.flag, step: f.step }, this.gen); g.added++; }
+    }
+    g.runs.push({
+      from: from.key, start: r.start, ticks: r.ticks, progress: Math.max(0, best) / total, time: r.time,
+      steps: r.steps, grabTick: r.grabTick, capTick: r.capTick, pops: r.pops, path: r.path,
     });
+    if (g.runs.length % 8 === 0) this.emit('progress', { gen: this.gen, done: Math.min(g.runs.length, this.batch), of: this.batch });
+    if (g.runs.length >= this.batch && this.wake) this.wake();
+  }
+
+  async generation() {
+    const gen = this.gen, t0 = Date.now();
+    if (!this.cur) { this.cur = { added: 0, faster: 0, ticks: 0, runs: [] }; this.inflight = 0; }
+    this.fill();
+    while (this.cur.runs.length < this.batch && !this.failed) await new Promise((res) => { this.wake = res; });
+    this.wake = null;
+    if (this.failed) throw this.failed;
+    const { added, faster, ticks, runs } = this.cur;
+    this.cur = { added: 0, faster: 0, ticks: 0, runs: [] };
+    const total = this.plan.total || 1;
 
     const best = this.bestCell();
     const fin = this.archive.get('done');
@@ -153,7 +167,7 @@ class ExploreTrainer extends EventEmitter {
       steps: best.key === 'done' ? this.plan.steps.length : best.step,
       grabbed: [...this.archive.values()].some((x) => x.flag),
       stalled: gen - this.lastGain, curiosity: this.curiosity(),
-      explorations: results.length, ticks,
+      explorations: runs.length, ticks,
       best: Math.max(0, best.progress) / total, mean: runs.reduce((a, r) => a + r.progress, 0) / runs.length,
     };
     const detail = {

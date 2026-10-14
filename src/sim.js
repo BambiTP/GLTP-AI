@@ -81,7 +81,12 @@ class Sim {
     room.updateClock = () => {};
     room.end = () => {};
     room.checkWinConditions = () => {};
-    if (!opts.recorder) { room.broadcast = () => {}; room.send = () => {}; }
+    if (!opts.recorder) {
+      // nobody's listening while training: don't build update packets (queue, flushDirty and
+      // snapshot only make packets; physics never reads them)
+      room.broadcast = () => {}; room.send = () => {};
+      room.queue = () => {}; room.flushDirty = () => {}; room.snapshot = () => {};
+    }
     const pickSpawn = room.pickSpawn.bind(room), randomPup = room.randomPup.bind(room);
     room.pickSpawn = (team) => withRandom(random, () => pickSpawn(team));
     room.randomPup = () => withRandom(random, () => randomPup());
@@ -99,6 +104,7 @@ class Sim {
     this.client = { emit() {}, disconnect() {} };
     room.addClient(this.client, { id: 'gltp-ai', name: opts.name || 'GLTP-AI' }, { team: 1 });
     this.p = room.players[this.client.playerId];
+    wallsOutOfBodyList(room.world);
     room.startPowerups();
     this.spawn = { x: this.p.body.GetPosition().x, y: this.p.body.GetPosition().y };
     this.jumpLimit = room.jumpLimit();
@@ -154,6 +160,37 @@ class Sim {
     for (const [x, y] of this.gateGroups) s += Math.round((Number(this.room.tiles[x][y]) - 9) * 10);
     return s;
   }
+}
+
+// Speed, with exactly the same results. Every step Box2D walks its whole body list (thousands of wall
+// tiles) to clear each body's island marker and, in SolveTOI, its sweep time, then skips the walls
+// because they never move. A wall's island marker is already cleared after every island it joins, and
+// its sweep time only matters while it touches something. So walls leave the body list, and SolveTOI
+// resets the sweep of walls in a contact, which is everything the full walk did that can change a result.
+// (Contacts, the broadphase and the ball's own place in the list are untouched.)
+function wallsOutOfBodyList(world) {
+  const Body = tp.Box2D.Dynamics.b2Body;
+  const STATIC = Body.b2_staticBody, ISLAND = Body.e_islandFlag;
+  let head = null, last = null;
+  for (let b = world.m_bodyList; b;) {
+    const next = b.m_next;
+    if (b.GetType() === STATIC) { b.m_prev = null; b.m_next = null; } else {
+      b.m_prev = last; b.m_next = null;
+      if (last) last.m_next = b; else head = b;
+      last = b;
+    }
+    b = next;
+  }
+  world.m_bodyList = head;
+  const solveTOI = world.SolveTOI;
+  world.SolveTOI = function (step) {
+    for (let c = this.m_contactList; c; c = c.m_next) {
+      const a = c.m_fixtureA.m_body, b = c.m_fixtureB.m_body;
+      if (a.GetType() === STATIC) { a.m_flags &= ~ISLAND; a.m_sweep.t0 = 0; }
+      if (b.GetType() === STATIC) { b.m_flags &= ~ISLAND; b.m_sweep.t0 = 0; }
+    }
+    return solveTOI.call(this, step);
+  };
 }
 
 // one tile from each 8-connected group of gate tiles
