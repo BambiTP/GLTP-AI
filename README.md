@@ -21,14 +21,18 @@ npm install            # Node 18+; installs tagpro-local from GitHub
 node cli.js view       # http://localhost:8080
 ```
 
-The page has a **map code** box and a **pen**:
+The page has a **map preset** box and a **pen**:
 
-1. Type a Fortunate Maps id (or a practice map: `steps`, `tower`, `spikes`, `slopes`) and press Load.
+1. Paste a group preset (`gZMefGzCggtaiaaaJraaksaaamaaaE`) or a group link with `?preset=` and press
+   Load. The bot plays the preset's map with the preset's settings (jumps, acceleration, respawn times…).
+   A Fortunate Maps id or a practice map (`steps`, `tower`, `spikes`, `slopes`) works too.
 2. Drag on the map to draw a rough path: from spawn to the flag, and back if you like. Undo with ↶ or
    Ctrl+Z. No path is fine too.
 3. Press **Go**. The bot plays the map live: the best route so far in red, the current generation in
    blue. When it finishes, the bar says **Possible ✓** with its time, and it keeps getting faster until
-   you press Stop. **Watch in TagPro** plays the best route in the real TagPro client.
+   you press Stop. **Watch in TagPro** plays the best route in the real TagPro client, and **⬇ Replay**
+   saves it as a replay file (`.ndjson`, the format TagPro's Replays page downloads). To watch a saved
+   file, open the Replays page, choose **Upload**, pick the file and press **Play**.
 
 The drawn line becomes `via` waypoints every 3 tiles (see Goals), with the grab where the line passes
 the flag and the cap at the end. Charts, every generation and NEAT's network are at **/dashboard**.
@@ -45,6 +49,7 @@ proxy, set it in `config.json`, `FM_PROXY=...` or `--proxy ...`. In the URL, `{i
 ## Use
 
 ```sh
+node cli.js explore gZMefGzCggtaiaaaJraaksaaamaaaE   # Go-Explore on a preset's map, with its settings
 node cli.js explore 88528                 # Go-Explore on GLTP map 88528 (downloads it), dashboard live
 node cli.js neat tower --population 300   # NEAT on the "tower" practice map
 node cli.js explore steps --goal "reach 2,2; grab; cap"   # a custom path

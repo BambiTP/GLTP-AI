@@ -211,20 +211,20 @@ function nearestTarget(f, from, map) {
 // plans/<map>.json holds a map's custom plan ({ steps, timeFrom }); runs on that map use it unless
 // they're given their own
 
-const planFile = (key) => path.join(PLAN_DIR, String(key).replace(/\.[a-z]+$/i, '').split(/[\\/]/).pop().replace(/[^\w-]+/g, '-') + '.json');
+const planFile = (level) => path.join(PLAN_DIR, String(level.slug || level.key).replace(/\.[a-z]+$/i, '').split(/[\\/]/).pop().replace(/[^\w-]+/g, '-') + '.json');
 
 function savedPlan(level) {
-  try { return JSON.parse(fs.readFileSync(planFile(level.key), 'utf8')); } catch (e) { return null; }
+  try { return JSON.parse(fs.readFileSync(planFile(level), 'utf8')); } catch (e) { return null; }
 }
 
 function savePlan(level, plan) {
   const clean = { steps: validate(plan.steps, level.map), timeFrom: Number.isInteger(plan.timeFrom) ? plan.timeFrom : -1 };
   fs.mkdirSync(PLAN_DIR, { recursive: true });
-  fs.writeFileSync(planFile(level.key), JSON.stringify(clean, null, 1) + '\n');
+  fs.writeFileSync(planFile(level), JSON.stringify(clean, null, 1) + '\n');
   return clean;
 }
 
-function deletePlan(level) { try { fs.unlinkSync(planFile(level.key)); } catch (e) { /* none */ } }
+function deletePlan(level) { try { fs.unlinkSync(planFile(level)); } catch (e) { /* none */ } }
 
 // the plan a run uses: its own, else the map's saved one, else the GLTP rules
 function resolvePlan(level, own) {

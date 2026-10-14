@@ -49,6 +49,7 @@
           <option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
         </select>
         <button class="btn tagpro" id="watch" title="Play this generation in the real TagPro client">▶ Watch in TagPro</button>
+        <a class="btn" id="download" title="Save this generation's best run as a TagPro replay file (.ndjson)">⬇ Replay</a>
       </div>
     </section>
 
@@ -81,14 +82,14 @@
     <aside class="side" id="setup-side" hidden>
       <div class="card">
         <div class="card-head"><h3>1 · Map</h3><span class="hint" id="proxy-hint"></span></div>
-        <div class="tabs" id="map-tabs"><button data-tab="practice" class="on">Practice</button><button data-tab="gltp">GLTP maps</button><button data-tab="id">Fortunate Maps id</button></div>
+        <div class="tabs" id="map-tabs"><button data-tab="practice" class="on">Practice</button><button data-tab="gltp">GLTP maps</button><button data-tab="id">Preset or id</button></div>
         <div id="tab-practice" class="maplist"></div>
         <div id="tab-gltp" hidden>
           <input type="search" id="map-search" placeholder="Search name, author, category…">
           <div class="maplist" id="gltp-list"></div>
         </div>
         <div id="tab-id" hidden class="row">
-          <input type="text" id="fm-id" placeholder="e.g. 88528" inputmode="numeric">
+          <input type="text" id="fm-id" placeholder="map preset or Fortunate Maps id">
           <button class="btn" id="fm-load">Load</button>
         </div>
         <div class="err" id="map-err" hidden></div>

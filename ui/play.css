@@ -20,7 +20,7 @@ button, input, select { font: inherit; color: inherit; }
 .brand .dot { color: var(--green); }
 .ball { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffc2c2, var(--red) 45%, #8a1111 100%); box-shadow: 0 0 10px rgba(255, 90, 90, .5); }
 .code { display: flex; background: #11141b; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
-.code input { width: 150px; background: none; border: 0; padding: 7px 14px; outline: none; font-variant-numeric: tabular-nums; }
+.code input { width: 300px; background: none; border: 0; padding: 7px 14px; outline: none; font-variant-numeric: tabular-nums; }
 .code button { background: #1e2330; border: 0; border-left: 1px solid var(--line); padding: 0 14px; cursor: pointer; }
 .code button:hover { background: #262c3d; }
 .msg { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -40,7 +40,7 @@ select { background: #11141b; border: 1px solid var(--line); border-radius: 8px;
 @keyframes hop { from { transform: translateY(0); } to { transform: translateY(-26px); } }
 .hero h1 { margin: 0; font-size: clamp(22px, 3.2vw, 34px); letter-spacing: -.5px; }
 .hero form { display: flex; gap: 8px; }
-.hero input { width: min(320px, 70vw); background: #11141b; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 18px; outline: none; text-align: center; }
+.hero input { width: min(440px, 80vw); background: #11141b; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 18px; outline: none; text-align: center; }
 .hero input:focus { border-color: var(--green); }
 .hero button { background: var(--green); color: #0c1504; border: 0; border-radius: 12px; padding: 0 20px; font-weight: 800; cursor: pointer; font-size: 16px; }
 .hero .sub { color: var(--muted); margin: 0; }
@@ -64,6 +64,7 @@ select { background: #11141b; border: 1px solid var(--line); border-radius: 8px;
 .actions { display: flex; gap: 8px; align-items: center; }
 .actions button, .actions a { background: #1c2130; border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; cursor: pointer; text-decoration: none; color: var(--text); white-space: nowrap; font-size: 13px; }
 .actions #watch { background: linear-gradient(180deg, #2a6fdb, #1d4fa3); border-color: transparent; font-weight: 700; }
+.actions a.off { opacity: .4; pointer-events: none; }
 .actions .stop { color: var(--red); background: none; border-color: rgba(255, 90, 90, .4); }
 
 dialog { width: min(1300px, 96vw); height: min(860px, 92vh); padding: 0; border: 1px solid var(--line); border-radius: 14px; background: #000; color: var(--text); overflow: hidden; }
@@ -76,7 +77,7 @@ dialog iframe { flex: 1; border: 0; width: 100%; }
 
 @media (max-width: 640px) {
   .brand { font-size: 0; gap: 0; }
-  .code input { width: 100px; }
+  .code input { width: 130px; }
   .msg { display: none; }
   .status { grid-template-columns: 1fr; }
 }

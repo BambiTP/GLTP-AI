@@ -7,6 +7,8 @@
 //   /api/runs/<id>             a run: settings, every generation's summary, the map
 //   /api/runs/<id>/gens/<n>    one generation in full
 //   /api/runs/<id>/replay/<n>  makes generation n's best run into a TagPro replay -> { url }
+//   /api/runs/<id>/download    the run's best route so far as a replay file (.ndjson); /download/<n>
+//                              for generation n's best; ?ghosts=N adds N more of its generation
 //   /api/events                live updates (server-sent events)
 //   /api/level?map=<map>       a map, its settings and the plan runs on it would use
 //   /api/plan                  PUT { map, steps, timeFrom } saves a map's plan, DELETE ?map= removes it
@@ -18,7 +20,7 @@ const http = require('http');
 const path = require('path');
 const tp = require('./tagpro');
 const { Run } = require('./store');
-const { loadLevel, fetchMap, configuredProxy, listGltp, practiceMaps } = require('./maps');
+const { loadLevel, prepare, configuredProxy, listGltp, practiceMaps } = require('./maps');
 const { buildReplay } = require('./replay');
 const { Plan, resolvePlan, savePlan, deletePlan, defaultSteps, stepsText } = require('./goals');
 const { Sim, play } = require('./sim');
@@ -136,8 +138,7 @@ class Dashboard {
       });
     }
     if (p === '/api/level') {
-      const map = String(url.searchParams.get('map') || '');
-      if (/^\d+$/.test(map)) await fetchMap(map, configuredProxy(this.proxy));
+      const map = await prepare(url.searchParams.get('map'), configuredProxy(this.proxy));
       this.levels.delete(map);
       return this.json(res, this.mapInfo(this.level(map), null));
     }
@@ -157,6 +158,16 @@ class Dashboard {
       return g ? this.json(res, g) : this.json(res, { error: 'no such generation' }, 404);
     }
     if ((m = /^\/api\/runs\/([\w-]+)\/route$/.exec(p))) return this.json(res, this.route(m[1]));
+    if ((m = /^\/api\/runs\/([\w-]+)\/download(?:\/(\d+))?$/.exec(p))) {
+      const run = Run.open(m[1]), meta = run.meta;
+      const gen = m[2] != null ? Number(m[2]) : meta.fastest ? meta.fastest.gen : meta.best ? meta.best.gen : null;
+      if (gen == null || !run.generation(gen)) return this.json(res, { error: 'nothing to download yet' }, 404);
+      const f = this.makeReplay(m[1], gen, Math.max(0, Math.min(60, Number(url.searchParams.get('ghosts')) || 0)));
+      const g = run.summaries()[gen] || {};
+      const what = g.time != null ? `${(g.time / 60).toFixed(2)}s` : `${Math.round((g.progress || 0) * 100)}pct`;
+      const name = `${meta.map.name} - GLTP-AI ${meta.algo} gen ${gen} ${what}`.replace(/[^\w .-]+/g, '_') + '.ndjson';
+      return this.file(res, f, { 'content-disposition': `attachment; filename="${name}"` });
+    }
     if ((m = /^\/api\/runs\/([\w-]+)\/replay\/(\d+)$/.exec(p))) {
       const ghosts = Math.max(0, Math.min(60, Number(url.searchParams.get('ghosts') ?? 30)));
       this.makeReplay(m[1], Number(m[2]), ghosts);
@@ -191,9 +202,9 @@ class Dashboard {
     const plan = runPlan || resolvePlan(level, null);
     const P = new Plan(level, plan.steps, sim.spawn, { timeFrom: plan.timeFrom });
     return {
-      key: level.key, name: level.name, author: level.author, difficulty: level.difficulty,
+      key: level.key, preset: level.preset, name: level.name, author: level.author, difficulty: level.difficulty,
       gltp: level.gltp ? { categories: level.gltp.categories, balls: level.gltp.balls_req, caps: level.gltp.caps_to_win } : null,
-      tiles: level.map.tiles, spawn: sim.spawn, settings: { mode: level.settings.mode, jumpLimit: level.settings.jumpLimit },
+      tiles: level.map.tiles, spawn: sim.spawn, settings: { mode: level.settings.mode, jumpLimit: level.settings.jumpLimit, accel: level.settings.accel, topspeed: level.settings.topspeed, playerRespawnTime: level.settings.playerRespawnTime },
       // where each team spawns (tiles; radius in tiles): the map's spawn points, or around its flag when it has none
       spawns: { red: sim.room.spawnTiles[1], blue: sim.room.spawnTiles[2] },
       plan: { steps: P.steps, timeFrom: plan.timeFrom, source: plan.source, text: stepsText(P.steps), total: P.total, seg: P.seg },
@@ -254,9 +265,9 @@ class Dashboard {
   async train({ map, algo, options = {}, plan = null }) {
     if (this.trainer) return { error: 'already training: stop it first' };
     if (!map) return { error: 'pick a map' };
-    if (/^\d+$/.test(String(map))) await fetchMap(map, configuredProxy(this.proxy));
-    this.levels.delete(String(map));
-    const level = this.level(String(map));
+    map = await prepare(map, configuredProxy(this.proxy));
+    this.levels.delete(map);
+    const level = this.level(map);
     const opts = {};
     for (const [k, v] of Object.entries(options)) {
       if (typeof v === 'boolean') opts[k] = v;

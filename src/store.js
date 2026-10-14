@@ -20,8 +20,9 @@ function stamp(d = new Date()) {
 class Run {
   static create(level, algo, config) {
     fs.mkdirSync(RUNS, { recursive: true });
-    let id = `${slug(level.key)}-${algo}-${stamp()}`, n = 2;
-    while (fs.existsSync(path.join(RUNS, id))) id = `${slug(level.key)}-${algo}-${stamp()}-${n++}`;
+    const name = slug(level.slug || level.key);
+    let id = `${name}-${algo}-${stamp()}`, n = 2;
+    while (fs.existsSync(path.join(RUNS, id))) id = `${name}-${algo}-${stamp()}-${n++}`;
     const run = new Run(id);
     fs.mkdirSync(path.join(run.dir, 'gens'), { recursive: true });
     run.meta = {

@@ -160,6 +160,7 @@ async function selectGen(g, byUser) {
   S.maxTick = Math.max(...d.runs.map((r) => r.path.length / 2 * 4)) + 60;
   $('scrub').max = S.maxTick;
   S.tick = 0;
+  $('download').href = `/api/runs/${S.run.meta.id}/download/${g}`;
   const sum = S.run.summaries[g];
   $('gen-label').textContent = `gen ${g} · ${fmtPct(sum.progress)}${sum.time != null ? ' · done in ' + fmtTime(sum.time) : ''}`;
   if (d.algo === 'neat') {

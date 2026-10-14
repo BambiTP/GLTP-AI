@@ -11,7 +11,7 @@
   <header class="bar">
     <div class="brand"><span class="ball"></span>GLTP<span class="dot">·</span>AI</div>
     <form class="code" id="code-form" autocomplete="off">
-      <input id="code" placeholder="Map code" spellcheck="false" aria-label="Map code (Fortunate Maps id)">
+      <input id="code" placeholder="Map preset" spellcheck="false" aria-label="Map preset (or a group link with ?preset=)">
       <button type="submit">Load</button>
     </form>
     <div class="msg" id="msg"></div>
@@ -29,11 +29,12 @@
     <div class="hero" id="hero">
       <div class="hero-ball"></div>
       <h1>Draw the way. The bot figures out the rest.</h1>
+      <p class="sub">Paste a map preset: its map, played with its settings.</p>
       <form id="hero-form" autocomplete="off">
-        <input id="hero-code" placeholder="Map code, e.g. 88528" spellcheck="false" autofocus>
+        <input id="hero-code" placeholder="Map preset, e.g. gZMefGzCggtaiaaaJraaksaaamaaaE" spellcheck="false" autofocus>
         <button type="submit">Load map</button>
       </form>
-      <p class="sub">A Fortunate Maps id, or a practice map: <a href="#" data-map="steps">steps</a> · <a href="#" data-map="tower">tower</a> · <a href="#" data-map="spikes">spikes</a> · <a href="#" data-map="slopes">slopes</a></p>
+      <p class="sub">A group link with ?preset=, a Fortunate Maps id, or a practice map: <a href="#" data-map="steps">steps</a> · <a href="#" data-map="tower">tower</a> · <a href="#" data-map="spikes">spikes</a> · <a href="#" data-map="slopes">slopes</a></p>
     </div>
 
     <div class="tools" id="tools" hidden>
@@ -48,6 +49,7 @@
       <div class="line"><strong id="headline">Starting…</strong><span id="detail"></span></div>
       <div class="actions">
         <button id="watch" title="Watch the best run so far in the real TagPro client">▶ Watch in TagPro</button>
+        <a id="download" title="Save the best run so far as a TagPro replay file (.ndjson)">⬇ Replay</a>
         <a href="/dashboard" target="_blank" title="Charts, every generation, the network">Details</a>
         <button id="stop" class="stop">Stop</button>
       </div>

@@ -1,8 +1,10 @@
 // maps.js - finds a map and the settings GLTP plays it with.
 //
 // A map is named by:
+//   - a group preset ("gZMefGzCgg...", or a ".../groups/create?preset=..." link): the map it picks
+//     (downloaded like an id below), played with exactly the preset's settings
 //   - a Fortunate Maps id ("88528"): maps/88528.png + .json, downloaded through your CORS proxy
-//     the first time (see fetchMap)
+//     the first time (see fetchMap), with its GLTP leaderboard preset's settings if it has one
 //   - a practice map in maps/ written as text ("climb" -> maps/climb.txt, see fromText)
 //   - a path to a map .png (its .json next to it)
 const fs = require('fs');
@@ -107,6 +109,45 @@ function fromText(text, name) {
   };
 }
 
+// ---------- presets ----------
+
+// the preset in a preset code or a group link, or null
+function presetOf(name) {
+  let s = String(name || '').trim();
+  try { s = decodeURIComponent(s); } catch (e) { /* not encoded */ }
+  const m = /(?:^|[?&]preset=)(gZ[A-Za-z]+)\s*$/.exec(s);
+  return m ? m[1] : null;
+}
+
+// the map a preset picks: { id } (Fortunate Maps) or { file } (one of tagpro-local's own maps)
+function presetMap(preset) {
+  const parsed = tp.presets.parse(preset);
+  if (!parsed) throw new Error("that isn't a valid map preset");
+  const m = parsed.map;
+  if (!m || m === 'random') throw new Error("this preset doesn't pick a map (its map is random)");
+  const fm = /^fm_id\/(\d+)$/.exec(m);
+  if (fm) return { id: fm[1] };
+  const dir = path.join(tp.ROOT, 'maps');
+  for (const f of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+    if (!f.endsWith('.json') || !fs.existsSync(path.join(dir, f.replace(/\.json$/, '.png')))) continue;
+    try { if (JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).info.name === m) return { file: path.join(dir, f.replace(/\.json$/, '.png')), name: m }; } catch (e) { /* skip */ }
+  }
+  throw new Error(`this preset's map "${m}" isn't a Fortunate Maps map GLTP-AI can load`);
+}
+
+// gets whatever a map name, id or preset needs (downloads), and returns the name to load it by
+async function prepare(name, proxy) {
+  name = String(name || '').trim();
+  const preset = presetOf(name);
+  if (preset) {
+    const pm = presetMap(preset);
+    if (pm.id) await fetchMap(pm.id, proxy);
+    return preset;
+  }
+  if (/^\d+$/.test(name)) await fetchMap(name, proxy);
+  return name;
+}
+
 // ---------- levels ----------
 
 function groupSettings(preset) {
@@ -124,19 +165,38 @@ function gltpInfo(id) {
 }
 
 // A level: the map (tagpro-local's loaded form) plus the room settings to play it with.
+const readPng = (file) => PNG.sync.read(tp.trimPng(fs.readFileSync(file)));
+
 function loadLevel(name) {
-  name = String(name);
-  let map, settings, info = null, key = name;
-  if (/^\d+$/.test(name)) {
+  name = String(name).trim();
+  let map, settings, info = null, key = name, slug = name, fromPreset = false;
+  const preset = presetOf(name);
+  if (preset) {
+    const pm = presetMap(preset);
+    if (pm.id) {
+      const png = path.join(MAP_DIR, pm.id + '.png');
+      if (!fs.existsSync(png)) throw new Error(`map ${pm.id} isn't downloaded yet: run "node cli.js fetch ${preset}"`);
+      map = tp.loadMap(readPng(png), JSON.parse(fs.readFileSync(path.join(MAP_DIR, pm.id + '.json'), 'utf8')));
+      info = gltpInfo(pm.id);
+      slug = pm.id;
+    } else {
+      map = tp.loadMap(readPng(pm.file), JSON.parse(fs.readFileSync(pm.file.replace(/\.png$/, '.json'), 'utf8')));
+      slug = pm.name;
+    }
+    key = preset;
+    settings = groupSettings(preset); // exactly what the preset says, mode included
+    fromPreset = true;
+  } else if (/^\d+$/.test(name)) {
     const png = path.join(MAP_DIR, name + '.png');
     if (!fs.existsSync(png)) throw new Error(`map ${name} isn't downloaded yet: run "node cli.js fetch ${name}"`);
-    map = tp.loadMap(PNG.sync.read(tp.trimPng(fs.readFileSync(png))), JSON.parse(fs.readFileSync(path.join(MAP_DIR, name + '.json'), 'utf8')));
+    map = tp.loadMap(readPng(png), JSON.parse(fs.readFileSync(path.join(MAP_DIR, name + '.json'), 'utf8')));
     info = gltpInfo(name);
     settings = groupSettings(info && info.preset);
   } else if (name.endsWith('.png')) {
     const json = name.replace(/\.png$/, '.json');
-    map = tp.loadMap(PNG.sync.read(tp.trimPng(fs.readFileSync(name))), fs.existsSync(json) ? JSON.parse(fs.readFileSync(json, 'utf8')) : {});
+    map = tp.loadMap(readPng(name), fs.existsSync(json) ? JSON.parse(fs.readFileSync(json, 'utf8')) : {});
     key = path.resolve(name);
+    slug = path.basename(name, '.png');
     settings = groupSettings(null);
   } else {
     const file = fs.existsSync(name) ? name : path.join(MAP_DIR, name.replace(/\.txt$/, '') + '.txt');
@@ -146,10 +206,11 @@ function loadLevel(name) {
     key = fs.existsSync(name) ? path.resolve(name) : path.basename(file, '.txt');
     settings = Object.assign(groupSettings(null), t.settings);
   }
-  // everything is played in gravity mode except the few GLTP maps listed as Classic
-  if (!(info && info.grav_or_classic === 'Classic')) settings.mode = 'gravity';
+  // everything is played in gravity mode except the few GLTP maps listed as Classic (a preset says
+  // its own mode)
+  if (!fromPreset && !(info && info.grav_or_classic === 'Classic')) settings.mode = 'gravity';
   return {
-    key,
+    key, slug, preset: preset || (info && info.preset) || null,
     name: (info && info.map_name) || (map.info && map.info.name) || name,
     author: (info && info.author) || (map.info && map.info.author) || '',
     difficulty: info ? info.difficultyFinal : null,
@@ -173,4 +234,4 @@ function practiceMaps() {
   return fs.existsSync(MAP_DIR) ? fs.readdirSync(MAP_DIR).filter((f) => f.endsWith('.txt')).map((f) => f.slice(0, -4)) : [];
 }
 
-module.exports = { loadLevel, fetchMap, configuredProxy, proxyUrl, DEFAULT_PROXY, listGltp, practiceMaps, fromText, MAP_DIR };
+module.exports = { loadLevel, prepare, presetOf, fetchMap, configuredProxy, proxyUrl, DEFAULT_PROXY, listGltp, practiceMaps, fromText, MAP_DIR };

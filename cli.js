@@ -8,12 +8,14 @@ const HELP = `GLTP-AI: bots that learn TagPro gravity maps, on tagpro-local's re
   node cli.js view                      the dashboard (http://localhost:8080)
   node cli.js explore <map> [options]   train with Go-Explore (proves a map possible, then gets faster)
   node cli.js neat <map> [options]      train with NEAT (MarI/O: evolves a network that plays)
-  node cli.js fetch <id...>             download Fortunate Maps maps through your proxy into maps/
+  node cli.js fetch <map...>            download maps (ids or presets) into maps/
   node cli.js maps [search]             list GLTP leaderboard maps (easiest first)
   node cli.js verify <run>              replay a run's best keys in a fresh room and check it finishes
   node cli.js replay <run> [gen]        write a generation's best run as a TagPro replay (.ndjson)
 
-<map> is a Fortunate Maps id (88528), a practice map in maps/ (steps, tower, spikes, slopes), or a .png.
+<map> is a group preset (gZMefGzC... or a ...?preset= link: its map, with its settings), a Fortunate
+Maps id (88528, with its GLTP preset's settings), a practice map in maps/ (steps, tower, spikes,
+slopes), or a .png.
 
 Goals (both trainers):
   --goal "reach 10,5; grab; cap"   the plan: steps done in order (reach x,y [rN], grab, cap, button x,y)
@@ -53,7 +55,7 @@ async function main() {
     const proxy = maps.configuredProxy(opt.proxy);
     console.log('through', proxy);
     for (const id of pos) {
-      try { console.log(id, (await maps.fetchMap(id, proxy)) ? 'downloaded' : 'already here'); } catch (e) { console.error(id, e.message); process.exitCode = 1; }
+      try { const key = await maps.prepare(id, proxy); console.log(id, '->', maps.loadLevel(key).name); } catch (e) { console.error(id, e.message); process.exitCode = 1; }
     }
     return;
   }
@@ -103,8 +105,7 @@ async function main() {
 
   if (cmd === 'explore' || cmd === 'neat') {
     if (!pos[0]) return console.log(HELP);
-    if (/^\d+$/.test(pos[0])) await maps.fetchMap(pos[0], maps.configuredProxy(opt.proxy));
-    const level = maps.loadLevel(pos[0]);
+    const level = maps.loadLevel(await maps.prepare(pos[0], maps.configuredProxy(opt.proxy)));
     if (opt.goal) {
       const { parseSteps } = require('./src/goals');
       opt.plan = { steps: parseSteps(opt.goal), timeFrom: opt.timeFrom ? opt.timeFrom - 1 : -1, source: 'run' };

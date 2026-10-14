@@ -1,4 +1,4 @@
-// play.js - type a map code, draw a rough path, press Go, and watch the bot learn the map.
+// play.js - paste a map preset, draw a rough path, press Go, and watch the bot learn the map.
 (function () {
 const $ = (id) => document.getElementById(id);
 const TS = 40;           // texture px per tile (MapView's units)
@@ -36,13 +36,23 @@ async function loadMap(code) {
     S.map = map; S.strokes = []; S.run = null; S.route = null; S.ghosts = [];
     await mapView.setMap(map, pack);
     $('code').value = code;
-    history.replaceState(null, '', '#' + encodeURIComponent(code));
-    say(`${map.name}${map.author ? ' by ' + map.author : ''}${map.gltp && map.gltp.balls !== '1' ? ` · needs ${map.gltp.balls} balls, the bot plays alone` : ''}`);
+    history.replaceState(null, '', '#' + encodeURIComponent(map.key));
+    say(describe(map));
     showEditing();
   } catch (e) {
     say(e.message, true);
     $('hero-code').value = code;
   }
+}
+
+// the map and the settings it's played with
+function describe(map) {
+  const st = map.settings, bits = [map.name + (map.author ? ' by ' + map.author : '')];
+  bits.push(st.mode === 'gravity' ? `gravity, ${st.jumpLimit >= 51 ? 'unlimited' : st.jumpLimit} jumps` : st.mode);
+  if (st.accel && st.accel !== 1) bits.push(`${Math.round(st.accel * 100)}% accel`);
+  if (st.topspeed && st.topspeed !== 1) bits.push(`${Math.round(st.topspeed * 100)}% top speed`);
+  if (map.gltp && map.gltp.balls !== '1') bits.push(`needs ${map.gltp.balls} balls, the bot plays alone`);
+  return bits.join(' · ');
 }
 
 function showEditing() {
@@ -248,11 +258,12 @@ async function go() {
 async function watch(id) {
   const j = await api(`/api/runs/${id}`);
   if (!S.map || S.map.key !== j.map.key) { S.map = j.map; await mapView.setMap(j.map, pack); $('code').value = j.map.key; }
+  $('download').href = `/api/runs/${id}/download`;
   S.run = { id, meta: j.meta, last: j.summaries[j.summaries.length - 1] || null };
   S.live = j.live;
   if (j.meta.plan && j.meta.plan.drawn) S.strokes = j.meta.plan.drawn.map((l) => l.map(([x, y]) => ({ x, y })));
   $('status').hidden = false;
-  say(`${j.map.name}${j.map.author ? ' by ' + j.map.author : ''}`);
+  say(describe(j.map));
   showEditing();
   renderStatus();
   await refresh(true);
@@ -293,6 +304,7 @@ function renderStatus() {
   }
   $('stop').hidden = !S.live;
   $('watch').disabled = !S.route;
+  $('download').classList.toggle('off', !S.route);
 }
 
 function connect() {
