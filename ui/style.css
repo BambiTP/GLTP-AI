@@ -58,7 +58,9 @@ button, input, select { font: inherit; color: inherit; }
 .stage-head .sub { color: var(--muted); font-size: 12px; }
 .canvas-wrap { position: relative; flex: 1; min-height: 240px; background: radial-gradient(ellipse at center, #10131b 0%, #07080b 100%); }
 #map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.canvas-wrap #map { cursor: grab; }
 .canvas-wrap.editing #map { cursor: crosshair; }
+#map.panning { cursor: grabbing !important; }
 .empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--muted); }
 .empty h2 { color: var(--text); margin: 0 0 6px; }
 .edit-hint { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); background: rgba(10,12,16,.85); border: 1px solid var(--line); padding: 5px 12px; border-radius: 99px; font-size: 12px; color: var(--yellow); pointer-events: none; }

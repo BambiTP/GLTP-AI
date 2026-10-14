@@ -392,6 +392,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' && S.mode === 'run') selectGen(S.gen + 1, true);
 });
 window.addEventListener('resize', () => { mapView.fit(); });
+document.addEventListener('keydown', (e) => { if (!e.target.matches('input, select, textarea') && (e.key === 'f' || e.key === 'F')) mapView.fit(true); });
 
 $('watch').addEventListener('click', async () => {
   if (!S.run || S.gen == null) return;
@@ -465,8 +466,11 @@ $('plan-save').addEventListener('click', async () => {
 });
 $('map').addEventListener('mousemove', (e) => { mapView.hover = S.mode === 'setup' ? mapView.tileAt(e) : null; });
 $('map').addEventListener('mouseleave', () => { mapView.hover = null; });
+// scroll to zoom, drag to move the map (in setup a click that doesn't move adds a waypoint)
+mapView.enablePanZoom(() => true);
+$('map').addEventListener('dblclick', () => mapView.fit(true));
 $('map').addEventListener('click', (e) => {
-  if (S.mode !== 'setup' || !S.setup || !S.setup.map) return;
+  if (mapView.dragged || S.mode !== 'setup' || !S.setup || !S.setup.map) return;
   const t = mapView.tileAt(e);
   if (!t) return;
   const tile = Number(S.setup.map.tiles[t.x][t.y]);

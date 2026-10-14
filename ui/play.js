@@ -34,6 +34,7 @@ async function loadMap(code) {
   try {
     const map = await api(`/api/level?map=${encodeURIComponent(code)}`);
     S.map = map; S.strokes = []; S.run = null; S.route = null; S.ghosts = [];
+    mapView.moved = false;
     await mapView.setMap(map, pack);
     $('code').value = code;
     history.replaceState(null, '', '#' + encodeURIComponent(map.key));
@@ -63,6 +64,8 @@ function showEditing() {
   $('go').disabled = !S.map || S.live;
   for (const id of ['pen', 'undo', 'clear']) $(id).disabled = S.live;
   $('stage').classList.toggle('drawing', S.pen && !S.live);
+  $('stage').classList.toggle('hand', !S.pen && !S.live);
+  $('stage').classList.toggle('live', S.live);
 }
 
 // ---------- drawn path -> plan ----------
@@ -148,9 +151,30 @@ function planFromPath() {
   return { steps, timeFrom: -1, source: 'run', drawn: S.strokes.map((l) => l.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100])) };
 }
 
+// ---------- pan and zoom ----------
+// left-drag draws with the pen; it moves the map with the hand tool, while the bot runs, or with Space
+// held; right- and middle-drag always move it
+let space = false;
+const panning = (e) => e.button === 1 || e.button === 2 || space || !S.pen || S.live || !S.map;
+mapView.enablePanZoom(panning, () => { if (S.stroke) { S.strokes.pop(); S.stroke = null; } });
+function setTool(pen) {
+  S.pen = pen;
+  $('pen').classList.toggle('on', pen);
+  $('hand').classList.toggle('on', !pen);
+  showEditing();
+}
+$('hand').addEventListener('click', () => setTool(false));
+$('fit').addEventListener('click', () => mapView.fit(true));
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches('input')) return;
+  if (e.code === 'Space') { e.preventDefault(); space = true; $('stage').classList.add('hand'); }
+  if (e.key === 'f' || e.key === 'F') mapView.fit(true);
+});
+document.addEventListener('keyup', (e) => { if (e.code === 'Space') { space = false; $('stage').classList.toggle('hand', !S.pen); } });
+
 // ---------- drawing ----------
 $('map').addEventListener('pointerdown', (e) => {
-  if (!S.map || !S.pen || S.live || e.button !== 0) return;
+  if (e.defaultPrevented || !S.map || !S.pen || S.live || e.button !== 0) return;
   $('map').setPointerCapture(e.pointerId);
   S.stroke = [mapView.pointAt(e)];
   S.strokes.push(S.stroke);
@@ -169,7 +193,7 @@ const endStroke = () => {
 };
 $('map').addEventListener('pointerup', endStroke);
 $('map').addEventListener('pointercancel', endStroke);
-$('pen').addEventListener('click', () => { S.pen = !S.pen; $('pen').classList.toggle('on', S.pen); showEditing(); });
+$('pen').addEventListener('click', () => setTool(true));
 $('undo').addEventListener('click', () => { S.strokes.pop(); S.plan = null; });
 $('clear').addEventListener('click', () => { S.strokes = []; S.plan = null; $('hint').hidden = false; });
 document.addEventListener('keydown', (e) => {
@@ -184,7 +208,7 @@ function drawPath(g, alpha) {
   g.save();
   g.lineCap = 'round'; g.lineJoin = 'round';
   for (const [w, c] of [[9, `rgba(0,0,0,${0.45 * alpha})`], [5, `rgba(255,214,10,${0.9 * alpha})`]]) {
-    g.strokeStyle = c; g.lineWidth = Math.max(2, w * k * 1.2);
+    g.strokeStyle = c; g.lineWidth = Math.min(w * 1.6, Math.max(2, w * k * 1.2));
     for (const line of S.strokes) {
       g.beginPath();
       line.forEach((p, i) => (i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p))));
@@ -198,7 +222,7 @@ function drawPath(g, alpha) {
     let i = 0, bd = Infinity;
     line.forEach((q, j) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; i = j; } });
     const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
-    const ang = Math.atan2(b.y - a.y, b.x - a.x), r = Math.max(5, 9 * k * 1.2);
+    const ang = Math.atan2(b.y - a.y, b.x - a.x), r = Math.min(13, Math.max(5, 9 * k * 1.2));
     g.save(); g.translate(X(p), Y(p)); g.rotate(ang);
     g.beginPath(); g.moveTo(r, 0); g.lineTo(-r * 0.7, r * 0.75); g.lineTo(-r * 0.7, -r * 0.75); g.closePath();
     g.strokeStyle = `rgba(0,0,0,${0.5 * alpha})`; g.lineWidth = 1.5; g.stroke(); g.fill();
@@ -345,8 +369,8 @@ $('watch').addEventListener('click', async () => {
 $('tagpro-close').addEventListener('click', () => $('tagpro').close());
 $('tagpro').addEventListener('close', () => { $('tagpro-frame').src = 'about:blank'; });
 // editing again after a run: forget the run's view, keep the path
-$('map').addEventListener('pointerdown', () => {
-  if (S.run && !S.live && S.pen) { S.run = null; S.route = null; S.ghosts = []; routeTag = ''; showEditing(); }
+$('map').addEventListener('pointerdown', (e) => {
+  if (S.run && !S.live && S.pen && e.button === 0 && !space) { S.run = null; S.route = null; S.ghosts = []; routeTag = ''; showEditing(); }
 }, true);
 window.addEventListener('resize', () => mapView.fit());
 window.addEventListener('hashchange', () => { const c = decodeURIComponent(location.hash.slice(1)); if (c && !S.live && (!S.map || c !== S.map.key)) loadMap(c); });

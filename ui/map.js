@@ -45,7 +45,7 @@ class MapView {
     this.H = map.tiles[0].length;
     this.tex = await textures(pack || {});
     this.bg = this.renderBackground();
-    this.fit();
+    this.fit(true);
   }
 
   // the static map at texture resolution (40 px per tile)
@@ -83,14 +83,98 @@ class MapView {
     return c;
   }
 
-  fit() {
+  // the whole map in view; after the user has zoomed or panned, a resize keeps their view
+  fit(reset) {
     const cw = this.canvas.clientWidth, ch = this.canvas.clientHeight;
     const dpr = window.devicePixelRatio || 1;
+    const oldW = this.canvas.width, oldH = this.canvas.height;
     this.canvas.width = Math.max(1, Math.round(cw * dpr));
     this.canvas.height = Math.max(1, Math.round(ch * dpr));
     if (!this.map) return;
-    const scale = Math.min(cw / (this.W * TS), ch / (this.H * TS)) * 0.96;
-    this.view = { scale: scale * dpr, ox: (this.canvas.width - this.W * TS * scale * dpr) / 2, oy: (this.canvas.height - this.H * TS * scale * dpr) / 2 };
+    const scale = Math.min(cw / (this.W * TS), ch / (this.H * TS)) * 0.96 * dpr;
+    this.base = scale;
+    if (reset || !this.moved) {
+      this.moved = false;
+      this.view = { scale, ox: (this.canvas.width - this.W * TS * scale) / 2, oy: (this.canvas.height - this.H * TS * scale) / 2 };
+    } else {
+      // keep what was in the middle in the middle
+      this.view.ox += (this.canvas.width - oldW) / 2;
+      this.view.oy += (this.canvas.height - oldH) / 2;
+    }
+  }
+
+  // zoom by `factor` keeping the map point under (clientX, clientY) where it is
+  zoomAt(clientX, clientY, factor) {
+    if (!this.map) return;
+    const r = this.canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const cx = (clientX - r.left) * dpr, cy = (clientY - r.top) * dpr, v = this.view;
+    const scale = Math.max(this.base * 0.5, Math.min(this.base * 12, v.scale * factor));
+    const k = scale / v.scale;
+    v.ox = cx - (cx - v.ox) * k;
+    v.oy = cy - (cy - v.oy) * k;
+    v.scale = scale;
+    this.moved = true;
+  }
+
+  panBy(dx, dy) {
+    const dpr = window.devicePixelRatio || 1;
+    this.view.ox += dx * dpr;
+    this.view.oy += dy * dpr;
+    this.moved = true;
+  }
+
+  // Wheel and pinch zoom; dragging pans when shouldPan(event) says so (or with two fingers). A
+  // pointerdown that starts a pan is marked with preventDefault(), so drawing tools can skip it, and
+  // this.dragged says whether the last press moved (so a pan doesn't also count as a click).
+  enablePanZoom(shouldPan, onPinch) {
+    const c = this.canvas, touches = new Map();
+    let pan = null, pinch = null;
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      this.zoomAt(e.clientX, e.clientY, Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0015)));
+    }, { passive: false });
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('pointerdown', (e) => {
+      this.dragged = false;
+      if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) {
+        const [a, b] = [...touches.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        pan = null;
+        if (onPinch) onPinch();
+        e.preventDefault();
+        return;
+      }
+      if (!shouldPan(e)) return;
+      e.preventDefault();
+      c.setPointerCapture(e.pointerId);
+      pan = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
+      c.classList.add('panning');
+    });
+    c.addEventListener('pointermove', (e) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && touches.size === 2) {
+        const [a, b] = [...touches.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y), x = (a.x + b.x) / 2, y = (a.y + b.y) / 2;
+        this.panBy(x - pinch.x, y - pinch.y);
+        if (pinch.d > 0) this.zoomAt(x, y, d / pinch.d);
+        pinch = { d, x, y };
+        this.dragged = true;
+        return;
+      }
+      if (!pan || e.pointerId !== pan.id) return;
+      this.panBy(e.clientX - pan.x, e.clientY - pan.y);
+      pan.x = e.clientX; pan.y = e.clientY;
+      if (Math.hypot(e.clientX - pan.sx, e.clientY - pan.sy) > 4) this.dragged = true;
+    });
+    const up = (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
+      if (pan && e.pointerId === pan.id) { pan = null; c.classList.remove('panning'); }
+    };
+    c.addEventListener('pointerup', up);
+    c.addEventListener('pointercancel', up);
   }
 
   // texture px <-> canvas px (tile x covers texture px x*40 .. x*40+40)
@@ -162,17 +246,17 @@ class MapView {
       for (const p of spawns[team] || []) {
         const x = this.sx(p.x * TS + TS / 2), y = this.sy(p.y * TS + TS / 2), r = (Math.max(0, p.radius || 0) + 0.5) * TS * k;
         g.fillStyle = `rgba(${rgb},.10)`; g.strokeStyle = `rgba(${rgb},.85)`;
-        g.lineWidth = Math.max(1.5, 2.5 * k); g.setLineDash([6 * k + 2, 5 * k + 2]);
+        g.lineWidth = Math.min(3, Math.max(1.5, 2.5 * k)); g.setLineDash([Math.min(10, 6 * k + 2), Math.min(8, 5 * k + 2)]);
         g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); g.stroke();
         g.setLineDash([]);
         g.fillStyle = `rgba(${rgb},.95)`;
-        g.beginPath(); g.arc(x, y, Math.max(2.5, 4 * k), 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, y, Math.min(5, Math.max(2.5, 4 * k)), 0, Math.PI * 2); g.fill();
       }
     }
     if (at) {
       const px = at.x * 100, py = at.y * 100;
       this.ball(px, py, 'red', 0.55, 19);
-      const fs = Math.max(10, Math.round(13 * k));
+      const fs = Math.min(18, Math.max(10, Math.round(13 * k)));
       g.font = `700 ${fs}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'bottom';
       g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.75)'; g.fillStyle = '#fff';
       g.strokeText('SPAWN', this.bx(px), this.by(py) - 21 * k);
@@ -243,7 +327,7 @@ class MapView {
       const r = runs[i];
       if (tick / every > r.path.length / 2 + 30) continue; // a run that ended a while ago
       const end = Math.min(Math.floor(tick / every), r.path.length / 2 - 1);
-      g.strokeStyle = 'rgba(120, 190, 255, 0.35)'; g.lineWidth = Math.max(1, 2 * k);
+      g.strokeStyle = 'rgba(120, 190, 255, 0.35)'; g.lineWidth = Math.min(3, Math.max(1, 2 * k));
       g.beginPath();
       let started = false;
       for (let p = Math.max(0, end - 10); p <= end; p++) {
@@ -265,7 +349,7 @@ class MapView {
     const b = runs[best];
     if (!b) return;
     const end = Math.min(Math.floor(tick / every), b.path.length / 2 - 1);
-    g.strokeStyle = 'rgba(255, 90, 90, 0.9)'; g.lineWidth = Math.max(1.5, 3 * k); g.lineJoin = 'round';
+    g.strokeStyle = 'rgba(255, 90, 90, 0.9)'; g.lineWidth = Math.min(5, Math.max(1.5, 3 * k)); g.lineJoin = 'round';
     g.beginPath();
     let started = false;
     for (let i = 0; i <= end; i++) {
