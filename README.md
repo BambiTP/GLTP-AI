@@ -34,6 +34,12 @@ The page has a **map preset** box and a **pen**:
    saves it as a replay file (`.ndjson`, the format TagPro's Replays page downloads). To watch a saved
    file, open the Replays page, choose **Upload**, pick the file and press **Play**.
 
+**Replays as a hint:** drop a replay of someone beating the map (`.ndjson`, from TagPro's Replays page
+or this page's ⬇ Replay) on the map, or press 📼. It loads the replay's map, splits the player's run into
+lives, and keeps the good parts: the life that capped (deaths and dead ends left out), joined to the
+earlier life that reached its checkpoint if it didn't start at spawn, split at portals. That becomes the
+path. Command line: `node cli.js explore --replay run.ndjson`.
+
 The drawn line becomes `via` waypoints every 3 tiles (see Goals), with the grab where the line passes
 the flag and the cap at the end. **Teleports:** lift the pen at a portal (or a spike, since popping
 respawns you at spawn) and start a new line where it sends you; the gap is a teleport, not a walk. Charts, every generation and NEAT's network are at **/dashboard**.
@@ -137,6 +143,8 @@ src/neat.js           NEAT, ported from MarI/O
 src/train-neat.js     NEAT training loop
 src/train-explore.js  Go-Explore
 src/replay.js         runs -> real TagPro replays
+src/demo.js           replays -> the good parts of a player's run, as a path
+src/path.js           a path (drawn or from a replay) -> via waypoints, grab, cap
 src/server.js         dashboard + the real TagPro client from tagpro-local
 ui/                   dashboard
 maps/*.txt            practice maps (text: # wall, . floor, S spawn, B blue flag, R red flag, * spike, ◣◤◥◢ 45° walls,

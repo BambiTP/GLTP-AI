@@ -99,6 +99,22 @@ async function check(name, fn) {
     fs.rmSync(t.run.dir, { recursive: true });
   });
 
+  await check('a replay becomes a path: the capping life, with grab and cap', () => {
+    const { Sim: S2, keysPerTick: kpt, encodeKeys: enc } = require('../src/sim');
+    const demo = require('../src/demo');
+    const sol = [...kpt(run.generation(run.meta.fastest.gen).best.keys)];
+    const sim = new S2(level);
+    const out = require('../src/replay').buildReplay(level, enc(sol), { name: 'T' });
+    const d = demo.parse(out.text);
+    assert.strictEqual(d.player.name, 'T');
+    assert.strictEqual(d.lives.filter((l) => l.cap != null).length, 1);
+    const g = demo.goodPath(d, { x: sim.spawn.x / 0.4 + 0.5, y: sim.spawn.y / 0.4 + 0.5 });
+    assert.strictEqual(g.lines.length, 1);
+    const plan = require('../src/path').pathToPlan(level.map.tiles, sim.spawn, [{ type: 'grab' }, { type: 'cap' }], g.lines);
+    assert(plan.steps.some((s) => s.type === 'grab') && plan.steps[plan.steps.length - 1].type === 'cap');
+    assert(plan.steps.filter((s) => s.soft).length > 3);
+  });
+
   await check('a replay has the real recorder header, a player id, and ghosts', () => {
     const g = run.generation(run.meta.fastest.gen);
     const r = buildReplay(level, g.best.keys, { ghosts: g.runs.slice(0, 3).map((x, i) => ({ name: '#' + i, path: x.path })) });

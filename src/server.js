@@ -112,7 +112,7 @@ class Dashboard {
     if (p === '/' || p === '/index.html') return this.file(res, path.join(UI, 'index.html'), { 'cache-control': 'no-store' });
     if (p === '/dashboard') return this.file(res, path.join(UI, 'dashboard.html'), { 'cache-control': 'no-store' });
     if (p.startsWith('/ui/')) { const f = this.inside(UI, p.slice(4)); return f ? this.file(res, f) : this.json(res, {}, 404); }
-    if (p === '/src/inputs.js') return this.file(res, path.join(__dirname, 'inputs.js'));
+    if (p === '/src/inputs.js' || p === '/src/path.js' || p === '/src/demo.js') return this.file(res, path.join(__dirname, path.basename(p)));
 
     if (p === '/api/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
@@ -202,7 +202,7 @@ class Dashboard {
     const plan = runPlan || resolvePlan(level, null);
     const P = new Plan(level, plan.steps, sim.spawn, { timeFrom: plan.timeFrom });
     return {
-      key: level.key, preset: level.preset, name: level.name, author: level.author, difficulty: level.difficulty,
+      key: level.key, preset: level.preset, fmId: level.fmId, name: level.name, author: level.author, difficulty: level.difficulty,
       gltp: level.gltp ? { categories: level.gltp.categories, balls: level.gltp.balls_req, caps: level.gltp.caps_to_win } : null,
       tiles: level.map.tiles, spawn: sim.spawn, settings: { mode: level.settings.mode, jumpLimit: level.settings.jumpLimit, accel: level.settings.accel, topspeed: level.settings.topspeed, playerRespawnTime: level.settings.playerRespawnTime },
       // where each team spawns (tiles; radius in tiles): the map's spawn points, or around its flag when it has none

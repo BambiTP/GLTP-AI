@@ -229,6 +229,7 @@ function loadLevel(name) {
   if (!fromPreset && !(info && info.grav_or_classic === 'Classic')) settings.mode = 'gravity';
   return {
     key, slug, preset: preset || (info && info.preset) || null,
+    fmId: /^\d+$/.test(String(slug)) ? String(slug) : null, // its Fortunate Maps id, if it has one
     name: (info && info.map_name) || (map.info && map.info.name) || name,
     author: (info && info.author) || (map.info && map.info.author) || '',
     difficulty: info ? info.difficultyFinal : null,

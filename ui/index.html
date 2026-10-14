@@ -34,18 +34,20 @@
         <input id="hero-code" placeholder="Map preset, e.g. gZMefGzCggtaiaaaJraaksaaamaaaE" spellcheck="false" autofocus>
         <button type="submit">Load map</button>
       </form>
-      <p class="sub">A group link with ?preset=, a Fortunate Maps id, or a practice map: <a href="#" data-map="steps">steps</a> · <a href="#" data-map="tower">tower</a> · <a href="#" data-map="spikes">spikes</a> · <a href="#" data-map="slopes">slopes</a></p>
+      <p class="sub">Or drop a replay of someone beating the map here. A group link with ?preset=, a Fortunate Maps id, or a practice map: <a href="#" data-map="steps">steps</a> · <a href="#" data-map="tower">tower</a> · <a href="#" data-map="spikes">spikes</a> · <a href="#" data-map="slopes">slopes</a></p>
     </div>
 
     <div class="tools" id="tools" hidden>
       <button id="pen" class="on" title="Draw a rough path (drag on the map)">✎</button>
       <button id="hand" title="Move the map (or right-drag, or hold Space). Scroll to zoom">✋</button>
       <button id="fit" title="Fit the whole map (F)">⤢</button>
+      <button id="replay" title="Use a replay: its good parts become the path (or drop a .ndjson file on the map)">📼</button>
+      <input type="file" id="replay-file" accept=".ndjson,.txt,application/x-ndjson,text/plain" hidden>
       <div class="sep"></div>
       <button id="undo" title="Undo the last line (Ctrl+Z)">↶</button>
       <button id="clear" title="Clear the path">✕</button>
     </div>
-    <div class="hint" id="hint" hidden>Just press Go: the bot finds the way by itself. Drawing a rough path is an optional hint (lift the pen at a portal and start again where it sends you). Scroll to zoom, right-drag to move.</div>
+    <div class="hint" id="hint" hidden>Just press Go: the bot finds the way by itself. Optional hints: draw a rough path, or drop a replay of someone beating the map (📼). Scroll to zoom, right-drag to move.</div>
 
     <div class="status" id="status" hidden>
       <div class="meter"><i id="meter"></i></div>
@@ -66,6 +68,8 @@
 
   <script src="/ui/sprites.js"></script>
   <script src="/ui/map.js"></script>
+  <script src="/src/path.js"></script>
+  <script src="/src/demo.js"></script>
   <script src="/ui/play.js"></script>
 </body>
 </html>

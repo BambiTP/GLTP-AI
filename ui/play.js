@@ -2,8 +2,6 @@
 (function () {
 const $ = (id) => document.getElementById(id);
 const TS = 40;           // texture px per tile (MapView's units)
-const SPACING = 3;       // a drawn path becomes a waypoint every 3 tiles
-const REACH = 2;         // ... each counts as passed within 2 tiles (and passing a later one counts too)
 
 const S = {
   map: null,             // /api/level or the run's map
@@ -62,99 +60,15 @@ function showEditing() {
   $('hint').hidden = S.strokes.length > 0;
   $('status').hidden = !S.run;
   $('go').disabled = !S.map || S.live;
-  for (const id of ['pen', 'undo', 'clear']) $(id).disabled = S.live;
+  for (const id of ['pen', 'undo', 'clear', 'replay']) $(id).disabled = S.live;
   $('stage').classList.toggle('drawing', S.pen && !S.live);
   $('stage').classList.toggle('hand', !S.pen && !S.live);
   $('stage').classList.toggle('live', S.live);
 }
 
-// ---------- drawn path -> plan ----------
-function isOpen(x, y) {
-  const t = S.map.tiles;
-  if (x < 0 || y < 0 || x >= t.length || y >= t[0].length) return false;
-  const n = Number(t[x][y]), b = Math.floor(n);
-  return b !== 0 && n !== 1 && b !== 7;
-}
-
-function tilesWhere(pred) {
-  const out = [], t = S.map.tiles;
-  for (let x = 0; x < t.length; x++) for (let y = 0; y < t[0].length; y++) if (pred(Number(t[x][y]))) out.push({ x, y });
-  return out;
-}
-
-// points every `step` tiles along each drawn line, its start and end included. Lines are kept apart:
-// the gap between the end of one line and the start of the next is a teleport (a portal, or popping
-// and respawning), not a walk, so no waypoints go in it
-function resample(strokes, step) {
-  const out = [];
-  for (const line of strokes) {
-    if (!line.length) continue;
-    out.push(line[0]);
-    let carry = 0;
-    for (let i = 1; i < line.length; i++) {
-      let from = line[i - 1];
-      const p = line[i];
-      let d = Math.hypot(p.x - from.x, p.y - from.y);
-      while (carry + d >= step) {
-        const k = (step - carry) / d;
-        const q = { x: from.x + (p.x - from.x) * k, y: from.y + (p.y - from.y) * k };
-        out.push(q);
-        d -= step - carry; carry = 0; from = q;
-      }
-      carry += d;
-    }
-    const last = line[line.length - 1], prev = out[out.length - 1];
-    if (Math.hypot(last.x - prev.x, last.y - prev.y) > step / 3) out.push(last);
-  }
-  return out;
-}
-
-// the nearest open tile to a point (the path is rough; walls and spikes aren't targets)
-function snap(p) {
-  let best = null, bd = Infinity;
-  const cx = Math.floor(p.x), cy = Math.floor(p.y);
-  for (let x = cx - 2; x <= cx + 2; x++) for (let y = cy - 2; y <= cy + 2; y++) {
-    if (!isOpen(x, y)) continue;
-    const d = Math.hypot(x + 0.5 - p.x, y + 0.5 - p.y);
-    if (d < bd) { bd = d; best = { x, y }; }
-  }
-  return best || { x: cx, y: cy };
-}
-
-function planFromPath() {
-  const base = S.map.gltpSteps.map((s) => ({ ...s }));
-  const pts = S.strokes.flat();
-  if (pts.length < 2) return { steps: base, timeFrom: -1, source: 'gltp' };
-  const near = (list, p) => Math.min(...list.map((q) => Math.hypot(q.x - p.x, q.y - p.y)), Infinity);
-  const flags = tilesWhere((t) => t === 4 || t === 20 || t === 16);
-  const caps = tilesWhere((t) => t === 3 || t === 19 || Math.floor(t) === 17);
-  const spawn = { x: Math.round(S.map.spawn.x / 0.4), y: Math.round(S.map.spawn.y / 0.4) };
-  let way = [];
-  for (const p of resample(S.strokes, SPACING)) {
-    const t = snap(p);
-    if (!way.length || way[way.length - 1].x !== t.x || way[way.length - 1].y !== t.y) way.push(t);
-  }
-  way = way.filter((w, i) => !(i === 0 && Math.hypot(w.x - spawn.x, w.y - spawn.y) < 2));
-  // grab where the path passes the flag, if it does; cap at the end
-  let gi = -1, gd = Infinity;
-  way.forEach((w, i) => { const d = near(flags, w); if (d < gd) { gd = d; gi = i; } });
-  const steps = [];
-  const reach = (w) => ({ type: 'reach', x: w.x, y: w.y, r: REACH, soft: true });
-  if (flags.length && gd <= 3) {
-    way.slice(0, gi).filter((w) => near(flags, w) > 1.5).forEach((w) => steps.push(reach(w)));
-    steps.push({ type: 'grab' });
-    const back = way.slice(gi + 1).filter((w) => near(flags, w) > 1.5);
-    while (back.length && near(caps, back[back.length - 1]) < 2.5) back.pop();
-    back.forEach((w) => steps.push(reach(w)));
-    steps.push({ type: 'cap' });
-  } else {
-    way.forEach((w) => steps.push(reach(w)));
-    steps.push({ type: 'grab' }, { type: 'cap' });
-  }
-  // maps that need more than one cap: the rest of the GLTP rules after the drawn first lap
-  steps.push(...base.slice(2));
-  return { steps, timeFrom: -1, source: 'run', drawn: S.strokes.map((l) => l.map((p) => [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100])) };
-}
+// ---------- drawn path -> plan (src/path.js) ----------
+const { resample } = globalThis.GLTPPath;
+const planFromPath = () => GLTPPath.pathToPlan(S.map.tiles, S.map.spawn, S.map.gltpSteps, S.strokes);
 
 // ---------- pan and zoom ----------
 // left-drag draws with the pen; it moves the map with the hand tool, while the bot runs, or with Space
@@ -356,6 +270,40 @@ function connect() {
   };
   es.onerror = () => { es.close(); setTimeout(connect, 2000); };
 }
+
+// ---------- replays: their good parts become the path (src/demo.js) ----------
+async function useReplay(file) {
+  if (S.live) return say('stop the bot first', true);
+  try {
+    say('reading ' + file.name + '…');
+    const demo = GLTPDemo.parse(await file.text());
+    // the replay says which map it is; load it unless it's the one already here
+    const same = S.map && ((demo.mapId && S.map.fmId === demo.mapId) || (!demo.mapId && demo.W === S.map.tiles.length && demo.H === S.map.tiles[0].length));
+    if (!same) {
+      if (demo.mapId) await loadMap(demo.mapId);
+      else if (demo.mapName) await loadMap(demo.mapName);
+      if (!S.map) throw new Error("couldn't load the replay's map: load it first, then drop the replay");
+    }
+    if (demo.W && (demo.W !== S.map.tiles.length || demo.H !== S.map.tiles[0].length)) throw new Error(`that replay is from a different map (${demo.mapName || '?'})`);
+    const g = GLTPDemo.goodPath(demo, { x: S.map.spawn.x / 0.4 + 0.5, y: S.map.spawn.y / 0.4 + 0.5 });
+    S.run = null; S.route = null; S.ghosts = []; S.heat = null;
+    S.strokes = g.lines; S.plan = null;
+    showEditing();
+    $('hint').hidden = true;
+    say('Path from the replay: ' + g.summary);
+  } catch (e) { say(e.message, true); }
+}
+$('replay').addEventListener('click', () => $('replay-file').click());
+$('replay-file').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) useReplay(f); });
+let dragDepth = 0;
+document.addEventListener('dragenter', (e) => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); dragDepth++; $('stage').classList.add('dropping'); } });
+document.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+document.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('stage').classList.remove('dropping'); } });
+document.addEventListener('drop', (e) => {
+  e.preventDefault(); dragDepth = 0; $('stage').classList.remove('dropping');
+  const f = e.dataTransfer.files[0];
+  if (f) useReplay(f);
+});
 
 // ---------- buttons ----------
 $('code-form').addEventListener('submit', (e) => { e.preventDefault(); loadMap($('code').value); });

@@ -21,6 +21,9 @@ Goals (both trainers):
   --goal "reach 10,5; grab; cap"   the plan: steps done in order (reach x,y [rN], grab, cap, button x,y)
                                    default: the map's saved plan (plans/), else its GLTP rules
   --time-from N                    the clock starts when step N (1-based) is done, not at spawn
+  --replay file.ndjson             a replay of someone beating the map: its good parts (the life that
+                                   capped, no deaths) become a rough path to follow; <map> can be left
+                                   out, the replay says which map it is
 
 Go-Explore:  --explore-ticks 90 --hold-mean 6 --frontier 4 --stall 25 --batch 0 --max-ticks 10800
 NEAT:        --population 300 --think-every 2 --patience 180 --max-ticks 3600 --end-on-pop false
@@ -104,8 +107,21 @@ async function main() {
   }
 
   if (cmd === 'explore' || cmd === 'neat') {
-    if (!pos[0]) return console.log(HELP);
-    const level = maps.loadLevel(await maps.prepare(pos[0], maps.configuredProxy(opt.proxy)));
+    let demo = null;
+    if (opt.replay) demo = require('./src/demo').parse(fs.readFileSync(opt.replay, 'utf8'));
+    const mapName = pos[0] || (demo && (demo.mapId || demo.mapName));
+    if (!mapName) return console.log(HELP);
+    const level = maps.loadLevel(await maps.prepare(mapName, maps.configuredProxy(opt.proxy)));
+    if (demo) {
+      // the replay's good parts become the path (src/demo.js, src/path.js)
+      const { Sim } = require('./src/sim');
+      const { defaultSteps } = require('./src/goals');
+      const spawn = new Sim(level).spawn;
+      const g = require('./src/demo').goodPath(demo, { x: spawn.x / 0.4 + 0.5, y: spawn.y / 0.4 + 0.5 });
+      opt.plan = require('./src/path').pathToPlan(level.map.tiles, spawn, defaultSteps(level), g.lines);
+      console.log('path from the replay:', g.summary);
+    }
+    delete opt.replay;
     if (opt.goal) {
       const { parseSteps } = require('./src/goals');
       opt.plan = { steps: parseSteps(opt.goal), timeFrom: opt.timeFrom ? opt.timeFrom - 1 : -1, source: 'run' };
