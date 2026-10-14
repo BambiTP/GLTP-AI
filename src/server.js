@@ -3,10 +3,14 @@
 //
 //   GET  /                        the page (ui/)
 //   GET  /api/runs                past runs, newest first, and which one is running
-//   POST /api/go {code}           paste a preset: download its map, start exploring -> { id }
+//   POST /api/map {code}          paste a preset: download its map, to place checkpoints before Go
+//   POST /api/go {code, checkpoints, permadeath, redZones}  paste a preset: download its map, start exploring -> { id }
 //   GET  /api/runs/<id>           a run's stats; with ?since=<version>, its view too if it changed
 //   GET  /api/runs/<id>/map       the run's map tiles and spawn
 //   POST /api/runs/<id>/continue  pick a past run up where it stopped
+//   POST /api/runs/<id>/checkpoints {checkpoints, permadeath, redZones}  a new run on the same map with these,
+//                                 starting from this run's best -> { id }
+//   POST /api/runs/<id>/focus {checkpoint}  every pick from just past this checkpoint (null: normal)
 //   POST /api/stop                stop the running run
 //   GET  /api/runs/<id>/download  the best run as a TagPro replay file
 //   GET  /game?replay=<id>        the best run in the real TagPro client
@@ -16,7 +20,7 @@ const path = require('path');
 const tp = require('./tagpro');
 const runs = require('./runs');
 const { prepare, loadLevel } = require('./maps');
-const { Explorer } = require('./explore');
+const { Explorer, seedPlaces } = require('./explore');
 const { buildReplay } = require('./replay');
 const { Sim } = require('./sim');
 
@@ -31,13 +35,41 @@ const TYPES = {
 let explorer = null;   // the running run, if any
 const levels = new Map();
 const level = (key) => { if (!levels.has(key)) levels.set(key, loadLevel(key)); return levels.get(key); };
+// a run's level: its map, with the run's checkpoints and whether death is permanent
+const levelOf = (meta) => Object.assign({}, level(meta.code), { checkpoints: meta.checkpoints || [], permadeath: !!meta.permadeath, redZones: meta.redZones || [] });
+
+// what the page sent, checked: in-bounds tiles, at most 20, the ones without the flag first (they come
+// before the grab)
+function checkpoints(list, L) {
+  const W = L.map.tiles.length, H = L.map.tiles[0].length;
+  if (!Array.isArray(list) || list.length > 20) throw new Error('up to 20 checkpoints');
+  const out = list.map((c) => ({ x: Number(c && c.x), y: Number(c && c.y), flag: !!(c && c.flag) }));
+  if (!out.every((c) => Number.isInteger(c.x) && Number.isInteger(c.y) && c.x >= 0 && c.y >= 0 && c.x < W && c.y < H)) throw new Error('a checkpoint is off the map');
+  return [...out.filter((c) => !c.flag), ...out.filter((c) => c.flag)];
+}
+
+// red zones the page sent: tiles on the map or up to 30 outside it (where a ball can fly off an open
+// edge), each once
+function redZones(list, L) {
+  const M = 30;
+  const W = L.map.tiles.length, H = L.map.tiles[0].length;
+  if (list == null) return [];
+  if (!Array.isArray(list) || list.length > 10000) throw new Error('up to 10000 red zone tiles');
+  const seen = new Set(), out = [];
+  for (const c of list) {
+    const x = Number(c && c.x), y = Number(c && c.y);
+    if (!(Number.isInteger(x) && Number.isInteger(y) && x >= -M && y >= -M && x < W + M && y < H + M)) throw new Error('a red zone is too far off the map');
+    if (!seen.has(`${x},${y}`)) { seen.add(`${x},${y}`); out.push({ x, y }); }
+  }
+  return out;
+}
 
 // a run left "running" by a server that was closed is stopped
 for (const m of runs.list()) if (m.status === 'running') { m.status = 'stopped'; runs.save(m); }
 
 async function run(meta) {
   if (explorer) explorer.stop();
-  const e = explorer = new Explorer(meta, level(meta.code));
+  const e = explorer = new Explorer(meta, levelOf(meta));
   e.start().catch((err) => { console.error('exploring stopped:', err.message); e.stop(); });
   return meta.id;
 }
@@ -51,11 +83,16 @@ function view(id) {
   return { best: runs.read(id, 'best.json'), recent: [], heat: runs.read(id, 'heat.json') };
 }
 
+function mapInfo(L) {
+  return { name: L.name, author: L.author, tiles: L.map.tiles, spawn: new Sim(L).spawn, settings: { jumpLimit: L.settings.jumpLimit, mode: L.settings.mode } };
+}
+
 const api = {
   'GET /api/runs': () => ({ runs: runs.list(), live: explorer && !explorer.stopped ? explorer.meta.id : null }),
+  'POST /api/map': async (b) => mapInfo(level(await prepare(b.code))),
   'POST /api/go': async (b) => {
-    const key = await prepare(b.code);
-    return { id: await run(runs.create(level(key), key)) };
+    const key = await prepare(b.code), L = level(key);
+    return { id: await run(runs.create(L, key, checkpoints(b.checkpoints || [], L), !!b.permadeath, redZones(b.redZones, L))) };
   },
   'POST /api/stop': () => { if (explorer) explorer.stop(); return { ok: true }; },
   'GET /api/runs/:id': (b, id, q) => {
@@ -65,13 +102,28 @@ const api = {
     const version = live ? `${id}:${explorer.version}` : `${id}:${meta.updated}`;
     return { meta: live ? explorer.meta : meta, live, version, view: q.get('since') === version ? null : view(id) };
   },
-  'GET /api/runs/:id/map': (b, id) => {
-    const L = level(runs.load(id).code), s = new Sim(L).spawn;
-    return { name: L.name, author: L.author, tiles: L.map.tiles, spawn: s, settings: { jumpLimit: L.settings.jumpLimit, mode: L.settings.mode } };
-  },
+  'GET /api/runs/:id/map': (b, id) => mapInfo(level(runs.load(id).code)),
   'POST /api/runs/:id/continue': async (b, id) => {
     const meta = runs.load(id);
     await prepare(meta.code);
+    return { id: await run(meta) };
+  },
+  'POST /api/runs/:id/focus': (b, id) => {
+    const meta = runs.load(id);
+    if (!meta) throw new Error('no such run');
+    const n = b.checkpoint == null ? null : Number(b.checkpoint);
+    if (n != null && !(Number.isInteger(n) && n >= 1 && n <= (meta.checkpoints || []).length)) throw new Error('no such checkpoint');
+    if (explorer && explorer.meta.id === id && !explorer.stopped) explorer.focus(n);
+    else { meta.focus = n; runs.save(meta); }
+    return { ok: true };
+  },
+  'POST /api/runs/:id/checkpoints': async (b, id) => {
+    const old = runs.load(id);
+    if (!old) throw new Error('no such run');
+    await prepare(old.code);
+    const L = level(old.code), meta = runs.create(L, old.code, checkpoints(b.checkpoints, L), b.permadeath ?? !!old.permadeath, redZones(b.redZones ?? old.redZones, L));
+    const best = (explorer && explorer.meta.id === id && explorer.best) || runs.read(id, 'best.json');
+    if (best) runs.write(meta.id, 'archive.json', seedPlaces(levelOf(meta), best.keys));
     return { id: await run(meta) };
   },
 };

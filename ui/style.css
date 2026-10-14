@@ -14,7 +14,10 @@ header { position: fixed; inset: 0 0 auto; height: 58px; display: flex; align-it
 #go-form:focus-within { border-color: var(--green); }
 #code { flex: 1; min-width: 0; background: none; border: 0; outline: none; padding: 9px 14px; }
 #go { background: var(--green); color: #0c1504; border: 0; padding: 0 26px; font-weight: 800; cursor: pointer; }
-#go:disabled { opacity: .5; cursor: default; }
+#go:disabled, #place:disabled { opacity: .5; cursor: default; }
+#permadeath { background: #1c2130; color: var(--muted); border: 0; border-left: 1px solid var(--line); padding: 0 12px; cursor: pointer; filter: grayscale(1); opacity: .6; }
+#permadeath[aria-pressed="true"] { color: var(--red); background: #2a1215; filter: none; opacity: 1; }
+#place { background: #1c2130; color: var(--yellow); border: 0; border-left: 1px solid var(--line); padding: 0 14px; font-weight: 800; cursor: pointer; }
 #runs { margin-left: auto; max-width: 300px; background: #10131a; border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; }
 
 main { position: fixed; inset: 58px 0 0; background: radial-gradient(ellipse at center, #111520, #06070a); }
@@ -25,7 +28,7 @@ main { position: fixed; inset: 58px 0 0; background: radial-gradient(ellipse at 
 #hero p { margin: 0; color: var(--muted); max-width: 520px; }
 #error { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: #2a1215; border: 1px solid rgba(255, 90, 90, .5); color: #ffb3b3; border-radius: 10px; padding: 8px 14px; max-width: calc(100vw - 32px); }
 
-#status { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(780px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center; box-shadow: 0 10px 40px rgba(0, 0, 0, .5); }
+#status, #editing { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(780px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center; box-shadow: 0 10px 40px rgba(0, 0, 0, .5); }
 .meter { grid-column: 1 / -1; height: 6px; background: #1b2030; border-radius: 99px; overflow: hidden; }
 .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--yellow)); transition: width .4s; }
 .text { display: flex; flex-direction: column; min-width: 0; }
@@ -33,9 +36,14 @@ main { position: fixed; inset: 58px 0 0; background: radial-gradient(ellipse at 
 #status.done .text strong { color: var(--yellow); }
 .text span { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .buttons { display: flex; gap: 8px; }
-.buttons button, .button { background: #1c2130; border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; cursor: pointer; text-decoration: none; color: var(--text); white-space: nowrap; font-size: 13px; }
+.buttons button, .buttons select, .button { background: #1c2130; border: 1px solid var(--line); border-radius: 9px; padding: 7px 12px; cursor: pointer; text-decoration: none; color: var(--text); white-space: nowrap; font-size: 13px; }
+#focus { width: auto; max-width: 96px; padding: 7px 8px; }
 #watch { background: linear-gradient(180deg, #2a6fdb, #1d4fa3); border-color: transparent; font-weight: 700; }
 .stop { color: var(--red) !important; background: none !important; border-color: rgba(255, 90, 90, .4) !important; }
+#editing { grid-template-columns: 1fr auto; }
+#mode-cp[aria-pressed="true"] { border-color: var(--yellow); color: var(--yellow); }
+#mode-red[aria-pressed="true"] { border-color: var(--red); color: var(--red); }
+#cp-apply { background: var(--green); color: #0c1504; border-color: transparent; font-weight: 700; }
 #continue { background: var(--green); color: #0c1504; border-color: transparent; font-weight: 700; }
 .off { opacity: .4; pointer-events: none; }
 
@@ -49,5 +57,6 @@ dialog iframe { flex: 1; border: 0; width: 100%; }
 @media (max-width: 700px) {
   .brand { font-size: 0; gap: 0; }
   #runs { max-width: 110px; }
-  #status { grid-template-columns: 1fr; }
+  #status, #editing { grid-template-columns: 1fr; }
+  .buttons { flex-wrap: wrap; }
 }

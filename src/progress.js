@@ -16,12 +16,12 @@ function passable(t) {
   return true;
 }
 
-// Dijkstra from every target tile outwards
-function field(map, isTarget) {
+// Dijkstra from every target tile outwards; `blocked` (x * H + y) are red zones, walked around like walls
+function field(map, isTarget, blocked) {
   const tiles = map.tiles, W = tiles.length, H = tiles[0].length;
   const D = new Float64Array(W * H).fill(Infinity);
   const open = new Uint8Array(W * H);
-  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) open[x * H + y] = passable(tiles[x][y]) ? 1 : 0;
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) open[x * H + y] = passable(tiles[x][y]) && !(blocked && blocked.has(x * H + y)) ? 1 : 0;
   // portals, reversed: arriving at a portal's destination means the portal tile is one step further
   const into = new Map();
   for (const [k, conf] of Object.entries(map.portals || {})) {
@@ -33,7 +33,7 @@ function field(map, isTarget) {
     into.get(to).push(px * H + py);
   }
   const heap = new Heap();
-  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (isTarget(Number(tiles[x][y]))) { D[x * H + y] = 0; heap.push(0, x * H + y); }
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) if (isTarget(Number(tiles[x][y]), x, y)) { D[x * H + y] = 0; heap.push(0, x * H + y); }
   while (heap.size) {
     const [d, i] = heap.pop();
     if (d > D[i]) continue;
@@ -70,50 +70,94 @@ function distAt(f, x, y) {
   return best;
 }
 
-// A red ball's goal: grab the blue (or yellow) flag, cap it on the red flag (a yellow one on a red
-// endzone), as many times as the map needs. progress() is in tiles, from 0 at spawn to `total`.
+// A red ball's goal: grab the blue (or yellow) flag, cap it on the red flag or in a red endzone (a
+// yellow one in a red endzone only), as many times as the map needs. On the first lap it passes the
+// creator's checkpoints in order: the ones without the flag on the way to it, the ones with the flag
+// on the way back. A cap only counts once every checkpoint is passed. progress() is in tiles, from 0 at spawn to `total`.
 class Goal {
   constructor(level, spawn) {
-    const map = level.map;
+    const map = level.map, H = map.tiles[0].length;
     this.caps = level.caps;
-    this.toFlag = field(map, (t) => t === T.BLUE_FLAG || t === T.BLUE_POTATO || t === T.YELLOW_FLAG);
-    this.toRedFlag = field(map, (t) => t === T.RED_FLAG || t === T.RED_POTATO);
-    this.toEndzone = field(map, (t) => Math.floor(t) === T.RED_ENDZONE);
-    let leg = Infinity; // flag to cap
+    this.blocked = new Set((level.redZones || []).filter((c) => c.x >= 0 && c.y >= 0 && c.x < map.tiles.length && c.y < H).map((c) => c.x * H + c.y));
+    this.toFlag = field(map, (t) => t === T.BLUE_FLAG || t === T.BLUE_POTATO || t === T.YELLOW_FLAG, this.blocked);
+    this.toRedFlag = field(map, (t) => t === T.RED_FLAG || t === T.RED_POTATO, this.blocked);
+    this.toEndzone = field(map, (t) => Math.floor(t) === T.RED_ENDZONE, this.blocked);
+    // the blue flag caps on the red flag or in a red endzone (see Sim.endzone)
+    this.toCap = field(map, (t) => t === T.RED_FLAG || t === T.RED_POTATO || Math.floor(t) === T.RED_ENDZONE, this.blocked);
+    // flag tiles: [x, y, the field to cap it on]
+    const flags = [];
     map.tiles.forEach((col, x) => col.forEach((t, y) => {
-      if (this.toFlag.D[x * this.toFlag.H + y] !== 0) return;
-      const f = this.capField(Number(t) === T.YELLOW_FLAG ? 3 : 2);
-      leg = Math.min(leg, f.D[x * f.H + y]);
+      if (this.toFlag.D[x * this.toFlag.H + y] === 0) flags.push([x, y, this.capField(Number(t) === T.YELLOW_FLAG ? 3 : 2)]);
     }));
-    const first = distAt(this.toFlag, spawn.x, spawn.y);
-    this.leg = Number.isFinite(leg) ? leg : 0;
-    this.first = Number.isFinite(first) ? first : 0;
-    this.lap = this.first + this.leg;      // spawn -> flag -> cap
-    this.again = 2 * this.leg;             // cap -> flag -> cap, for maps that need more caps
+    const cps = level.checkpoints || [];
+    this.pre = cps.filter((c) => !c.flag).length;
+    // the first lap's targets in order: checkpoints, the flag, checkpoints with the flag, the cap
+    this.targets = [...cps.slice(0, this.pre).map((c) => this.point(map, c)), { flag: true }, ...cps.slice(this.pre).map((c) => this.point(map, c)), { cap: true }];
+    const fin = (d) => (Number.isFinite(d) ? d : 0);
+    // legs[i]: the walk into target i from the one before it (from spawn for the first)
+    this.legs = this.targets.map((to, i) => {
+      const from = i ? this.targets[i - 1] : { x: spawn.x / TILE, y: spawn.y / TILE };
+      if (from.flag) return fin(Math.min(...flags.map(([x, y, f]) => { const g = to.cap ? f : to.field; return g.D[x * g.H + y]; })));
+      return fin(Math.min(...this.fieldsOf(to).map((f) => distAt(f, from.x * TILE, from.y * TILE))));
+    });
+    this.cum = [0];
+    for (const l of this.legs) this.cum.push(this.cum[this.cum.length - 1] + l);
+    this.leg = fin(Math.min(...flags.map(([x, y, f]) => f.D[x * f.H + y]))); // flag to cap
+    this.lap = this.cum[this.legs.length];  // spawn -> checkpoints -> flag -> checkpoints -> cap
+    this.again = 2 * this.leg;              // cap -> flag -> cap, for maps that need more caps
     this.total = this.lap + (this.caps - 1) * this.again;
   }
 
-  capField(flag) { return flag === 3 ? this.toEndzone : this.toRedFlag; }
+  point(map, c) { return { x: c.x, y: c.y, field: field(map, (t, x, y) => x === c.x && y === c.y, this.blocked) }; }
 
-  done(sim) { return sim.capTicks.length >= this.caps; }
+  fieldsOf(target, flag) {
+    if (target.field) return [target.field];
+    if (target.flag) return [this.toFlag];
+    return flag ? [this.capField(flag)] : [this.toRedFlag, this.toEndzone];
+  }
+
+  capField(flag) { return flag === 3 ? this.toEndzone : this.toCap; }
+
+  done(sim) { return sim.goalCaps.length >= this.caps; }
 
   // the tick the map was finished on (null if not yet)
-  finishTick(sim) { return this.done(sim) ? sim.capTicks[this.caps - 1] : null; }
+  finishTick(sim) { return this.done(sim) ? sim.goalCaps[this.caps - 1] : null; }
 
   progress(sim) {
-    const k = sim.capTicks.length;
+    const k = sim.goalCaps.length;
     if (k >= this.caps) return this.total;
-    const base = k === 0 ? 0 : this.lap + (k - 1) * this.again;
-    const toGrab = k === 0 ? this.first : this.leg;
     const b = sim.ball();
-    if (!b) return base;
-    if (!sim.flag) {
-      const d = distAt(this.toFlag, b.x, b.y);
-      return base + (Number.isFinite(d) ? Math.max(0, toGrab - d) : 0);
+    if (k > 0) {
+      const base = this.lap + (k - 1) * this.again;
+      if (!b) return base;
+      if (!sim.flag) {
+        const d = distAt(this.toFlag, b.x, b.y);
+        return base + (Number.isFinite(d) ? Math.max(0, this.leg - d) : 0);
+      }
+      const d = distAt(this.capField(sim.flag), b.x, b.y);
+      return base + this.leg + (Number.isFinite(d) ? Math.max(0, this.leg - d) : 0);
     }
-    const d = distAt(this.capField(sim.flag), b.x, b.y);
-    return base + toGrab + (Number.isFinite(d) ? Math.max(0, this.leg - d) : 0);
+    // the first lap: which target it's heading for
+    const s = sim.cpTicks.length;
+    let i;
+    if (!sim.flag) i = Math.min(s, this.pre);   // a checkpoint, or the flag
+    else if (s < this.pre) return this.cum[s];   // grabbed before its checkpoints: off the route
+    else i = s + 1;                              // a checkpoint with the flag, or the cap
+    if (!b) return this.cum[i];
+    const d = Math.min(...this.fieldsOf(this.targets[i], sim.flag).map((f) => distAt(f, b.x, b.y)));
+    return this.cum[i] + (Number.isFinite(d) ? Math.max(0, this.legs[i] - d) : 0);
   }
+}
+
+// What makes two moments "the same place": tile, rough speed, jumps left, flag, caps done,
+// checkpoints passed, gates.
+function placeKey(sim, goal) {
+  if (goal.done(sim)) return 'done';
+  const b = sim.ball();
+  if (!b) return null;
+  const vx = Math.max(-2, Math.min(2, Math.round(b.vx / 1.25)));
+  const vy = b.vy < -1.5 ? 'u' : b.vy > 1.5 ? 'd' : 's';
+  return `${Math.round(b.x / TILE)},${Math.round(b.y / TILE)},${vx}${vy},${Math.min(sim.jumpsLeft, 3)},${sim.flag},${sim.capTicks.length},${sim.cpTicks.length},${sim.gateState()}`;
 }
 
 class Heap {
@@ -142,4 +186,4 @@ class Heap {
   }
 }
 
-module.exports = { Goal, field, distAt, TILE };
+module.exports = { Goal, placeKey, field, distAt, TILE };

@@ -10,6 +10,7 @@
 const tp = require('./tagpro');
 
 const STEP_MS = 1000 / 60;
+const TILE = 0.4, BALL = 0.19; // metres
 const KEY_BITS = { left: 1, right: 2, up: 4, down: 8 };
 
 // timers handed out by Sim are plain objects; clearTimeout has to recognise them
@@ -46,6 +47,11 @@ class Sim {
     this.keySeq = 0;
     this.grabTicks = [];  // ticks played when each grab happened
     this.capTicks = [];   // ... each cap
+    this.checkpoints = level.checkpoints || []; // the creator's checkpoints, to pass in order
+    this.cpTicks = [];    // ... each checkpoint passed
+    this.redZones = new Set((level.redZones || []).map((c) => (c.x + 1024) * 65536 + c.y + 1024)); // tiles not to go in
+    this.redAt = null;    // the tick the ball's centre first went into a red zone
+    this.goalCaps = [];   // ... each cap made after passing every checkpoint (the ones that count)
     this.pops = 0;
     const random = rng(1);
     const withRandom = (fn) => { const saved = Math.random; Math.random = random; try { return fn(); } finally { Math.random = saved; } };
@@ -73,7 +79,10 @@ class Sim {
     room.randomPup = () => withRandom(() => randomPup());
     // what happened when, in ticks played (this.tick counts up after the step)
     const capture = room.capture.bind(room), grabFlag = room.grabFlag.bind(room), pop = room.pop.bind(room);
-    room.capture = (p) => { if (p === this.p) this.capTicks.push(this.tick + 1); capture(p); };
+    room.capture = (p) => {
+      if (p === this.p) { this.capTicks.push(this.tick + 1); if (this.cpTicks.length >= this.checkpoints.length) this.goalCaps.push(this.tick + 1); }
+      capture(p);
+    };
     room.grabFlag = (p, team) => { if (p === this.p) this.grabTicks.push(this.tick + 1); grabFlag(p, team); };
     room.pop = (p, killer, o) => { if (p === this.p && !p.dead) this.pops++; pop(p, killer, o); };
 
@@ -89,6 +98,10 @@ class Sim {
     this.spawn = { x: this.p.body.GetPosition().x, y: this.p.body.GetPosition().y };
     this.jumpLimit = room.jumpLimit();
     this.gates = gateGroups(level.map.tiles);
+    // red endzones: GLTP-AI counts the blue flag carried into one as a cap (real TagPro only scores the
+    // yellow flag there)
+    this.endzones = [];
+    level.map.tiles.forEach((col, x) => col.forEach((t, y) => { if (Math.floor(Number(t)) === tp.T.RED_ENDZONE) this.endzones.push([x * TILE, y * TILE]); }));
   }
 
   // keys: bit mask (1 left, 2 right, 4 up, 8 down) held from the next tick on
@@ -115,6 +128,30 @@ class Sim {
     if (this.timers.length > 64) this.timers = this.timers.filter((h) => !h.cancelled);
     this.room.step();
     this.tick++;
+    if (this.cpTicks.length < this.checkpoints.length) this.checkpoint();
+    if (this.endzones.length && this.p.flag === 2 && !this.p.dead) this.endzone();
+    if (this.redZones.size && this.redAt == null && !this.p.dead) {
+      const pos = this.p.body.GetPosition();
+      if (this.redZones.has((Math.round(pos.x / TILE) + 1024) * 65536 + Math.round(pos.y / TILE) + 1024)) this.redAt = this.tick;
+    }
+  }
+
+  // the blue flag into a red endzone: a cap, the way touching the red flag with it is (the flag goes
+  // home, and capTicks/goalCaps count it). The tick is the one just played, as for the engine's caps.
+  endzone() {
+    const pos = this.p.body.GetPosition(), reach = TILE / 2 + BALL - 0.01;
+    if (!this.endzones.some(([x, y]) => Math.abs(pos.x - x) < reach && Math.abs(pos.y - y) < reach)) return;
+    this.tick--; // the capture hook stamps tick + 1
+    this.room.capture(this.p);
+    this.tick++;
+  }
+
+  // passing the next checkpoint: the ball touches its tile, holding the flag if it's a flag checkpoint
+  checkpoint() {
+    const c = this.checkpoints[this.cpTicks.length];
+    if (this.p.dead || !c.flag !== !this.p.flag) return;
+    const pos = this.p.body.GetPosition(), reach = TILE / 2 + BALL;
+    if (Math.abs(pos.x - c.x * TILE) < reach && Math.abs(pos.y - c.y * TILE) < reach) this.cpTicks.push(this.tick);
   }
 
   get dead() { return this.p.dead; }

@@ -25,6 +25,14 @@ From another computer (e.g. over Tailscale): `node app.js --host 100.106.58.111 
   so it's proof. It keeps getting faster until you press **Stop**.
 - **Past runs** (top right): open any earlier run, watch it, and press **Continue** to pick it up where
   it stopped.
+- **⚑ Checkpoints**: press **⚑** next to Go to load the pasted map without starting, or **⚑
+  Checkpoints** on a run. Click tiles in the order the bot must pass them (click again for one passed
+  holding the flag, a third time to remove it), then **Start with these**. On a run, that starts a new
+  run that begins from the current best. A cap only counts once every checkpoint is passed. The bot mostly
+  explores on from the furthest checkpoint it has reached, but keeps a quarter of its effort on
+  getting to each checkpoint faster. The status line shows the fastest time to each one (⚑1, ⚑2…).
+- **☠** (next to Go): death is permanent for the runs you start while it's on. A pop ends that try,
+  and nothing after a pop is remembered, so the best run never dies.
 - **▶ Watch in TagPro** plays the best run in the real TagPro client; **⬇ Replay** saves it as a TagPro
   replay file (TagPro's Replays page, Upload tab, plays it).
 

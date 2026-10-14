@@ -1,6 +1,9 @@
 // map.js - draws a map with the real TagPro textures and walls (sprites.js), and on top of it: where
-// the explorer has been (heat), what it's exploring right now (blue balls), and the best run (red).
-// Scroll to zoom, drag to move, double-click to see the whole map.
+// the explorer has been (heat), what it's exploring right now (blue balls), the best run (red) and the
+// checkpoints. Scroll to zoom, drag to move, double-click to see the whole map; a click (no drag) on a
+// tile calls onTile(x, y). With onPaint set, a Shift-drag paints tiles instead of moving:
+// onPaint(x, y, first) for each tile it crosses (first: the tile it started on). Clicks and paint
+// reach up to `margin` tiles outside the map (0 by default), for red zones out there.
 (function () {
 const { SPRITES, DRAW_FLOOR, wallPieces } = globalThis.TPSprites;
 const TS = 40; // texture pixels per tile
@@ -84,16 +87,40 @@ class MapView {
       v.x = px - (px - v.x) * (k / v.k); v.y = py - (py - v.y) * (k / v.k); v.k = k;
       this.moved = true;
     }, { passive: false });
-    c.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; c.setPointerCapture(e.pointerId); c.classList.add('dragging'); });
+    const tileAt = (e) => {
+      const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, v = this.view;
+      const x = Math.floor(((e.clientX - r.left) * dpr - v.x) / (TS * v.k)), y = Math.floor(((e.clientY - r.top) * dpr - v.y) / (TS * v.k));
+      const m = this.margin || 0;
+      return x >= -m && y >= -m && x < this.W + m && y < this.H + m ? [x, y] : null;
+    };
+    const paint = (e, first) => {
+      const t = tileAt(e);
+      if (!t || (drag.last && drag.last[0] === t[0] && drag.last[1] === t[1])) return;
+      drag.last = t;
+      this.onPaint(t[0], t[1], first);
+    };
+    c.addEventListener('pointerdown', (e) => {
+      c.setPointerCapture(e.pointerId);
+      if (e.shiftKey && this.onPaint && this.view) { drag = { paint: true, last: null }; return paint(e, true); }
+      drag = { x: e.clientX, y: e.clientY, travel: 0 };
+      c.classList.add('dragging');
+    });
     c.addEventListener('pointermove', (e) => {
+      if (drag && drag.paint) return paint(e, false);
       if (!drag || !this.view) return;
       const dpr = window.devicePixelRatio || 1;
       this.view.x += (e.clientX - drag.x) * dpr; this.view.y += (e.clientY - drag.y) * dpr;
-      drag = { x: e.clientX, y: e.clientY };
+      drag = { x: e.clientX, y: e.clientY, travel: drag.travel + Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) };
       this.moved = true;
     });
     const up = () => { drag = null; c.classList.remove('dragging'); };
-    c.addEventListener('pointerup', up);
+    c.addEventListener('pointerup', (e) => {
+      if (drag && !drag.paint && drag.travel < 5 && this.onTile && this.view) {
+        const t = tileAt(e);
+        if (t) this.onTile(t[0], t[1]);
+      }
+      up();
+    });
     c.addEventListener('pointercancel', up);
     c.addEventListener('dblclick', () => this.fit(true));
   }
@@ -119,7 +146,33 @@ class MapView {
     return [path[i * 2] + (path[j * 2] - path[i * 2]) * a, path[i * 2 + 1] + (path[j * 2 + 1] - path[i * 2 + 1]) * a];
   }
 
-  // o: { heat: { W, H, cells }, recent: [path...], recentTick, best: { path, holding(tick) }, bestTick }
+  // red zones: tiles the ball must never go in
+  redZones(list) {
+    const g = this.g, v = this.view, s = TS * v.k;
+    g.fillStyle = 'rgba(255, 50, 50, .38)';
+    g.strokeStyle = 'rgba(255, 90, 90, .9)';
+    g.lineWidth = Math.max(1, 1.5 * v.k);
+    for (const c of list) { const x = v.x + c.x * s, y = v.y + c.y * s; g.fillRect(x, y, s, s); g.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1); }
+  }
+
+  // the checkpoints, numbered in order: green once the best run (at `tick`) has passed them; the ones
+  // to pass holding the flag are blue
+  checkpoints(list, passed) {
+    const g = this.g, v = this.view, s = TS * v.k;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `800 ${Math.max(9, s * 0.45)}px system-ui, sans-serif`;
+    list.forEach((c, i) => {
+      const x = v.x + c.x * s, y = v.y + c.y * s, done = i < passed;
+      g.fillStyle = done ? 'rgba(155, 225, 93, .45)' : c.flag ? 'rgba(80, 140, 255, .35)' : 'rgba(255, 214, 10, .3)';
+      g.strokeStyle = done ? '#9be15d' : c.flag ? '#6ea0ff' : '#ffd60a';
+      g.lineWidth = Math.max(1.5, 2.5 * v.k);
+      g.fillRect(x, y, s, s); g.strokeRect(x, y, s, s);
+      g.fillStyle = '#fff';
+      g.fillText((c.flag ? '⚑' : '') + (i + 1), x + s / 2, y + s / 2 + 1);
+    });
+  }
+
+  // o: { heat: { W, H, cells }, recent: [path...], recentTick, best: { path, holding(tick), checkpoints },
+  //      bestTick, checkpoints: [{ x, y, flag }], redZones: [{ x, y }] }
   draw(o) {
     const g = this.g, c = this.canvas, v = this.view;
     g.setTransform(1, 0, 0, 1, 0, 0);
@@ -136,6 +189,11 @@ class MapView {
         g.fillStyle = `hsla(${220 - 210 * f}, 90%, 55%, ${0.08 + 0.35 * f * f})`;
         g.fillRect(v.x + x * TS * v.k, v.y + y * TS * v.k, TS * v.k + 0.5, TS * v.k + 0.5);
       }
+    }
+    if (o.redZones && o.redZones.length) this.redZones(o.redZones);
+    if (o.checkpoints) {
+      const ticks = (o.best && o.best.checkpoints) || [];
+      this.checkpoints(o.checkpoints, o.editing ? 0 : ticks.filter((t) => t <= o.bestTick).length);
     }
     for (const p of o.recent || []) {
       const q = MapView.at(p, o.recentTick);

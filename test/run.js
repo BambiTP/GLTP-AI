@@ -6,7 +6,7 @@ const runs = require('../src/runs');
 const { loadLevel, resolve, proxyUrl, DEFAULT_PROXY } = require('../src/maps');
 const { Sim, play, encodeKeys, sliceKeys, concatKeys } = require('../src/sim');
 const { Goal } = require('../src/progress');
-const { Explorer } = require('../src/explore');
+const { Explorer, seedPlaces, keysOf, readArchive } = require('../src/explore');
 const { buildReplay } = require('../src/replay');
 
 const mapFile = (name) => path.join(__dirname, 'maps', name + '.txt');
@@ -80,10 +80,62 @@ async function explore(level, key, seconds, meta = runs.create(level, key), unti
   });
 
   await check('a stopped run continues from its saved memory', async () => {
-    const places = runs.read(meta.id, 'archive.json').length;
+    const places = readArchive(meta.id).length;
     const gen = meta.gen;
     const again = await explore(steps, mapFile('steps'), 3, runs.load(meta.id), false);
     assert(again.gen > gen && again.cells >= places);
+  });
+
+  await check('checkpoints: passed in order, a cap only counts after them, and the bot finishes through them', async () => {
+    // the bottom-right corner on the way, then next to the flag holding it
+    const cps = [{ x: 21, y: 11, flag: false }, { x: 21, y: 2, flag: true }];
+    const L = Object.assign({}, steps, { checkpoints: cps });
+    const old = runs.read(meta.id, 'best.json'), skip = play(L, old.keys);
+    if (skip.cpTicks.length < cps.length) assert.strictEqual(new Goal(L, skip.spawn).finishTick(skip), null);
+    const seeded = seedPlaces(L, old.keys);
+    assert(seeded.length > 10 && seeded[0].key === 'start');
+    const m = runs.create(L, mapFile('steps'), cps);
+    runs.write(m.id, 'archive.json', seeded);
+    await explore(L, mapFile('steps'), 90, m);
+    assert(m.time != null, 'not finished in 90 s');
+    assert(m.splits.every((t) => t != null) && m.splits[0] < m.splits[1] && m.splits[1] < m.time);
+    const sim = play(L, runs.read(m.id, 'best.json').keys);
+    assert.strictEqual(sim.cpTicks.length, 2);
+    assert.strictEqual(new Goal(L, sim.spawn).finishTick(sim), m.time);
+    fs.rmSync(path.join(runs.RUNS, m.id), { recursive: true });
+  });
+
+  await check('permadeath: no remembered route ever pops', async () => {
+    const L = Object.assign(loadLevel(mapFile('spikes')), { permadeath: true });
+    const m = await explore(L, mapFile('spikes'), 10, runs.create(L, mapFile('spikes'), [], true), false);
+    const places = readArchive(m.id);
+    assert(places.length > 50);
+    for (const p of places.filter((_, i) => i % 10 === 0)) assert.strictEqual(play(L, keysOf(p.trail)).pops, 0, p.key);
+    fs.rmSync(path.join(runs.RUNS, m.id), { recursive: true });
+  });
+
+  await check('red zones: no remembered route goes in one', async () => {
+    // a tile half way along the best route
+    const old = runs.read(meta.id, 'best.json');
+    let at = null;
+    play(steps, old.keys, {}, (s) => { if (s.tick === 120) { const b = s.ball(); at = { x: Math.round(b.x / 0.4), y: Math.round(b.y / 0.4) }; } });
+    const L = Object.assign({}, steps, { redZones: [at] });
+    assert(play(L, old.keys).redAt != null, 'the best route goes through it');
+    const m = await explore(L, mapFile('steps'), 8, runs.create(L, mapFile('steps'), [], false, [at]), false);
+    const places = readArchive(m.id);
+    assert(places.length > 50);
+    for (const p of places) assert.strictEqual(play(L, keysOf(p.trail)).redAt, null, p.key);
+    fs.rmSync(path.join(runs.RUNS, m.id), { recursive: true });
+  });
+
+  await check('endzones: the blue flag carried into a red one is a cap', async () => {
+    const L = loadLevel(mapFile('endzone'));
+    const m = await explore(L, mapFile('endzone'), 60);
+    assert(m.time != null, 'not finished in 60 s');
+    const sim = play(L, runs.read(m.id, 'best.json').keys);
+    assert.strictEqual(sim.capTicks.length, 1);
+    assert.strictEqual(new Goal(L, sim.spawn).finishTick(sim), m.time);
+    fs.rmSync(path.join(runs.RUNS, m.id), { recursive: true });
   });
 
   await check('portals: the explorer goes through them', async () => {

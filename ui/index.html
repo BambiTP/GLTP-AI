@@ -12,6 +12,8 @@
     <div class="brand"><span class="logo"></span>GLTP<b>·</b>AI</div>
     <form id="go-form" autocomplete="off">
       <input id="code" placeholder="Paste a map preset" spellcheck="false" aria-label="Map preset">
+      <button type="button" id="permadeath" aria-pressed="false" title="Death is permanent: a pop ends the run">☠</button>
+      <button type="button" id="place" title="Place checkpoints before starting">⚑</button>
       <button id="go">Go</button>
     </form>
     <select id="runs" aria-label="Past runs"><option value="">Past runs</option></select>
@@ -29,10 +31,21 @@
       <div class="meter"><i id="meter"></i></div>
       <div class="text"><strong id="headline"></strong><span id="detail"></span></div>
       <div class="buttons">
+        <select id="focus" aria-label="Where to explore from" title="Explore the whole route, or only from just past one checkpoint (greyed out: not reached yet)"></select>
+        <button id="checkpoints" title="Checkpoints and red zones">⚑ ⛔ Edit</button>
         <button id="watch">▶ Watch in TagPro</button>
         <a id="download" class="button">⬇ Replay</a>
         <button id="stop" class="stop">Stop</button>
         <button id="continue">Continue</button>
+      </div>
+    </section>
+    <section id="editing" hidden>
+      <div class="text"><strong id="edit-title">Checkpoints</strong><span id="edit-help"></span></div>
+      <div class="buttons">
+        <button id="mode-cp" aria-pressed="true">⚑ Checkpoints</button>
+        <button id="mode-red" aria-pressed="false">⛔ Red zones</button>
+        <button id="cp-cancel">Cancel</button>
+        <button id="cp-apply">Start with these</button>
       </div>
     </section>
   </main>
