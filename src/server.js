@@ -1,6 +1,8 @@
 // server.js - the dashboard, plus the real TagPro client from tagpro-local for watching replays.
 //
-//   /                          the dashboard (ui/)
+//   /                          draw a path on a map and let the bot loose (ui/index.html)
+//   /dashboard                 every run and generation in detail (ui/dashboard.html)
+//   /api/runs/<id>/route       the run's best route so far, replayed: { path, time, ... }
 //   /api/runs                  every saved run
 //   /api/runs/<id>             a run: settings, every generation's summary, the map
 //   /api/runs/<id>/gens/<n>    one generation in full
@@ -19,7 +21,7 @@ const { Run } = require('./store');
 const { loadLevel, fetchMap, configuredProxy, listGltp, practiceMaps } = require('./maps');
 const { buildReplay } = require('./replay');
 const { Plan, resolvePlan, savePlan, deletePlan, defaultSteps, stepsText } = require('./goals');
-const { Sim } = require('./sim');
+const { Sim, play } = require('./sim');
 
 const UI = path.join(__dirname, '..', 'ui');
 const MIME = {
@@ -106,6 +108,7 @@ class Dashboard {
     let m;
 
     if (p === '/' || p === '/index.html') return this.file(res, path.join(UI, 'index.html'), { 'cache-control': 'no-store' });
+    if (p === '/dashboard') return this.file(res, path.join(UI, 'dashboard.html'), { 'cache-control': 'no-store' });
     if (p.startsWith('/ui/')) { const f = this.inside(UI, p.slice(4)); return f ? this.file(res, f) : this.json(res, {}, 404); }
     if (p === '/src/inputs.js') return this.file(res, path.join(__dirname, 'inputs.js'));
 
@@ -153,6 +156,7 @@ class Dashboard {
       const g = Run.open(m[1]).generation(m[2]);
       return g ? this.json(res, g) : this.json(res, { error: 'no such generation' }, 404);
     }
+    if ((m = /^\/api\/runs\/([\w-]+)\/route$/.exec(p))) return this.json(res, this.route(m[1]));
     if ((m = /^\/api\/runs\/([\w-]+)\/replay\/(\d+)$/.exec(p))) {
       const ghosts = Math.max(0, Math.min(60, Number(url.searchParams.get('ghosts') ?? 30)));
       this.makeReplay(m[1], Number(m[2]), ghosts);
@@ -193,6 +197,23 @@ class Dashboard {
       plan: { steps: P.steps, timeFrom: plan.timeFrom, source: plan.source, text: stepsText(P.steps), total: P.total, seg: P.seg },
       gltpSteps: defaultSteps(level),
     };
+  }
+
+  // the run's best route so far (the fastest finish, else the furthest it got), played again for its
+  // path; kept until the run finds a better one
+  route(id) {
+    const run = Run.open(id), m = run.meta;
+    const src = m.fastest ? run.generation(m.fastest.gen).best : m.best;
+    if (!src || !src.keys) return { path: null };
+    const tag = `${id}/${m.fastest ? 'f' + m.fastest.gen : 'b' + m.best.gen}/${src.keys.length}`;
+    this.routes = this.routes || new Map();
+    if (!this.routes.has(tag)) {
+      const level = this.level(m.map.key), path = [];
+      const push = (sim) => { const b = sim.ball(); if (b) path.push(Math.round(b.x * 100), Math.round(b.y * 100)); else path.push(-1, -1); };
+      const sim = play(level, src.keys, {}, (s) => { if (s.tick % 4 === 0) push(s); });
+      this.routes.set(tag, { path, time: m.fastest ? m.fastest.time : null, finished: !!m.fastest, progress: m.best ? m.best.progress : 0, ticks: sim.tick, grabTick: sim.grabTick, capTick: sim.capTick, gen: m.fastest ? m.fastest.gen : m.best.gen });
+    }
+    return this.routes.get(tag);
   }
 
   // replays are made once and kept in the run's folder
@@ -239,7 +260,10 @@ class Dashboard {
       if (typeof v === 'boolean') opts[k] = v;
       else if (v !== '' && v != null && Number.isFinite(Number(v))) opts[k] = Number(v);
     }
-    if (plan && plan.steps) opts.plan = { steps: plan.steps, timeFrom: plan.timeFrom ?? -1, source: plan.source || 'run' };
+    if (plan && plan.steps) {
+      opts.plan = { steps: plan.steps, timeFrom: plan.timeFrom ?? -1, source: plan.source || 'run' };
+      if (Array.isArray(plan.drawn)) opts.plan.drawn = plan.drawn.slice(0, 50).map((st) => (Array.isArray(st) ? st.slice(0, 2000).map((q) => [Number(q[0]) || 0, Number(q[1]) || 0]) : []));
+    }
     const Trainer = algo === 'explore' ? require('./train-explore').ExploreTrainer : require('./train-neat').NeatTrainer;
     const t = new Trainer(level, opts);
     this.attach(t);

@@ -47,8 +47,18 @@ async function check(name, fn) {
   await check('plans parse, print and validate', () => {
     const steps = parseSteps('reach 10,5 r2; grab; button 3,4; cap');
     assert.deepStrictEqual(steps[0], { type: 'reach', x: 10, y: 5, r: 2 });
-    assert.strictEqual(stepsText(parseSteps('reach 3,3; grab; cap')), 'reach 3,3; grab; cap');
+    assert.strictEqual(stepsText(parseSteps('reach 3,3; via 5,5; via 6,6 r3; grab; cap')), 'reach 3,3; via 5,5; via 6,6 r3; grab; cap');
     assert.throws(() => new Plan(level, [{ type: 'button', x: 3, y: 3 }], new Sim(level).spawn), /no button/);
+  });
+
+  await check('passing a later via point counts for the ones before it', () => {
+    const sim = new Sim(level);
+    const tx = Math.round(sim.spawn.x / 0.4), ty = Math.round(sim.spawn.y / 0.4);
+    const plan = new Plan(level, [{ type: 'reach', x: tx + 8, y: ty, r: 1, soft: true }, { type: 'reach', x: tx, y: ty, r: 1, soft: true }, { type: 'grab' }], sim.spawn);
+    const st = plan.update(plan.start(), sim);
+    assert.strictEqual(st.step, 2);
+    const hard = new Plan(level, [{ type: 'reach', x: tx + 8, y: ty, r: 1 }, { type: 'reach', x: tx, y: ty, r: 1 }, { type: 'grab' }], sim.spawn);
+    assert.strictEqual(hard.update(hard.start(), sim).step, 0);
   });
 
   await check('progress runs from 0 at spawn to the plan total', () => {

@@ -97,6 +97,15 @@ class MapView {
   sx(px) { return this.view.ox + px * this.view.scale; }
   sy(py) { return this.view.oy + py * this.view.scale; }
 
+  // the map point under a mouse event, in tiles (0.5 = middle of the first tile)
+  pointAt(ev) {
+    const r = this.canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    return {
+      x: ((ev.clientX - r.left) * dpr - this.view.ox) / this.view.scale / TS,
+      y: ((ev.clientY - r.top) * dpr - this.view.oy) / this.view.scale / TS,
+    };
+  }
+
   // the tile under a mouse event
   tileAt(ev) {
     const r = this.canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;

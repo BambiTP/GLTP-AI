@@ -18,8 +18,20 @@ Two algorithms:
 
 ```sh
 npm install            # Node 18+; installs tagpro-local from GitHub
-node cli.js view       # dashboard at http://localhost:8080
+node cli.js view       # http://localhost:8080
 ```
+
+The page has a **map code** box and a **pen**:
+
+1. Type a Fortunate Maps id (or a practice map: `steps`, `tower`, `spikes`, `slopes`) and press Load.
+2. Drag on the map to draw a rough path: from spawn to the flag, and back if you like. Undo with ↶ or
+   Ctrl+Z. No path is fine too.
+3. Press **Go**. The bot plays the map live: the best route so far in red, the current generation in
+   blue. When it finishes, the bar says **Possible ✓** with its time, and it keeps getting faster until
+   you press Stop. **Watch in TagPro** plays the best route in the real TagPro client.
+
+The drawn line becomes `via` waypoints every 3 tiles (see Goals), with the grab where the line passes
+the flag and the cap at the end. Charts, every generation and NEAT's network are at **/dashboard**.
 
 Maps come from Fortunate Maps through BamBall's CORS proxy, `api.bamball.workers.dev` (the Cloudflare
 Worker in [BamBall](https://github.com/BambiTP/BamBall)'s `worker/`). Nothing to set up. To use another
@@ -41,10 +53,10 @@ node cli.js maps climb                    # GLTP maps matching "climb", easiest 
 node cli.js help                          # every command and option
 ```
 
-Or do it all from the dashboard. **New run** lets you pick a map (practice, the GLTP list, or any
-Fortunate Maps id), set its goals and path, choose the strategy, and start.
+The detailed dashboard (`/dashboard`) has **New run** with the GLTP map list, exact goals and every
+strategy setting.
 
-### The dashboard
+### The dashboard (/dashboard)
 
 - **The map** in the real texture pack. Every run of the selected generation plays at once: the best in
   red with its trail, the rest as blue ghosts. The plan's steps are drawn on top, and Go-Explore runs can
@@ -63,7 +75,8 @@ happens on is the run's time.
 
 | step | done when |
 |---|---|
-| `reach x,y [rN]` | the ball's centre is within N tiles (default 1) of tile x,y: a waypoint |
+| `reach x,y [rN]` | the ball's centre is within N tiles (default 1) of tile x,y: a checkpoint |
+| `via x,y [rN]` | the same within N tiles (default 2), but reaching any later `via` in a row counts for this one too: a rough-path guide the bot can cut corners on |
 | `grab` | a flag (blue or yellow) is grabbed |
 | `cap` | a cap (blue flag on the red flag, yellow flag on a red endzone) |
 | `button x,y` | the button on tile x,y is touched |

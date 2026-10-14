@@ -3,6 +3,9 @@
 // A plan is an ordered list of steps; finishing the last one is the win, and the tick it happens on
 // is the run's time:
 //   { type: 'reach', x, y, r }   get the ball's centre within r tiles of tile (x, y) (a waypoint)
+//   { type: 'reach', ..., soft } a "via" waypoint: a rough-path guide. Reaching any later via point
+//                                in the same run of them counts for the ones before it, so the ball
+//                                can cut corners, while progress still follows the path
 //   { type: 'grab' }             grab a flag (blue or yellow)
 //   { type: 'cap' }              cap (blue flag on the red flag, yellow flag on a red endzone)
 //   { type: 'button', x, y }     touch the button on tile (x, y)
@@ -21,7 +24,7 @@ const PLAN_DIR = path.join(__dirname, '..', 'plans');
 
 const GRAB_TILES = [T.BLUE_FLAG, T.BLUE_POTATO, T.YELLOW_FLAG];
 
-// text form, one step per ";" or line: "reach 10,5 r2; grab; button 7,3; cap"
+// text form, one step per ";" or line: "reach 10,5 r2; via 14,3; grab; button 7,3; cap"
 function parseSteps(text) {
   return String(text).split(/[;\n]/).map((s) => s.trim()).filter(Boolean).map((s) => {
     const [type, at, r] = s.split(/\s+/);
@@ -29,13 +32,18 @@ function parseSteps(text) {
     const m = /^(\d+),(\d+)$/.exec(at || '');
     if (!m) throw new Error(`"${s}": expected "${type} x,y"`);
     if (type === 'reach') return { type, x: +m[1], y: +m[2], r: r ? Number(r.replace(/^r/, '')) : 1 };
+    if (type === 'via') return { type: 'reach', x: +m[1], y: +m[2], r: r ? Number(r.replace(/^r/, '')) : 2, soft: true };
     if (type === 'button') return { type, x: +m[1], y: +m[2] };
-    throw new Error(`unknown step "${type}" (reach, grab, cap, button)`);
+    throw new Error(`unknown step "${type}" (reach, via, grab, cap, button)`);
   });
 }
 
 function stepsText(steps) {
-  return steps.map((s) => (s.type === 'reach' ? `reach ${s.x},${s.y}${s.r !== 1 ? ' r' + s.r : ''}` : s.type === 'button' ? `button ${s.x},${s.y}` : s.type)).join('; ');
+  return steps.map((s) => {
+    if (s.type === 'reach' && s.soft) return `via ${s.x},${s.y}${s.r !== 2 ? ' r' + s.r : ''}`;
+    if (s.type === 'reach') return `reach ${s.x},${s.y}${s.r !== 1 ? ' r' + s.r : ''}`;
+    return s.type === 'button' ? `button ${s.x},${s.y}` : s.type;
+  }).join('; ');
 }
 
 // a map's GLTP rules as a plan (red ball): grab and cap, as many caps as the leaderboard wants
@@ -54,7 +62,7 @@ function validate(steps, map) {
     if (s.type === 'grab' || s.type === 'cap') return { type: s.type };
     const x = Math.round(Number(s.x)), y = Math.round(Number(s.y));
     if (!(x >= 0 && y >= 0 && x < W && y < H)) throw new Error(`${s.type} ${s.x},${s.y} is off the map`);
-    if (s.type === 'reach') return { type: 'reach', x, y, r: Math.max(0.3, Math.min(10, Number(s.r) || 1)) };
+    if (s.type === 'reach') return Object.assign({ type: 'reach', x, y, r: Math.max(0.3, Math.min(10, Number(s.r) || 1)) }, s.soft ? { soft: true } : {});
     if (s.type === 'button') {
       if (Math.floor(Number(map.tiles[x][y])) !== T.BUTTON) throw new Error(`there's no button at ${x},${y}`);
       return { type: 'button', x, y };
@@ -124,7 +132,17 @@ class Plan {
       if (s.type === 'grab') { ok = sim.grabCount > state.grabs; if (ok) state.grabs = sim.grabCount; }
       else if (s.type === 'cap') { ok = sim.capCount > state.caps; if (ok) state.caps = sim.capCount; }
       else if (s.type === 'button') ok = !sim.dead && sim.p.touching.has(s.x + ',' + s.y);
-      else { const b = sim.ball(); ok = !!b && Math.hypot(b.x / TILE - s.x, b.y / TILE - s.y) <= s.r; }
+      else {
+        const b = sim.ball();
+        if (!b) break;
+        const at = (w) => Math.hypot(b.x / TILE - w.x, b.y / TILE - w.y) <= w.r;
+        // via points: the furthest one reached in this run of them counts for all before it
+        let hit = at(s) ? state.step : -1;
+        if (s.soft) for (let j = state.step + 1; j < this.steps.length && this.steps[j].type === 'reach' && this.steps[j].soft; j++) if (at(this.steps[j])) hit = j;
+        if (hit < 0) break;
+        while (state.step < hit) { state.done.push(sim.tick); state.step++; }
+        ok = true;
+      }
       if (!ok) break;
       state.done.push(sim.tick);
       state.step++;
@@ -210,7 +228,11 @@ function deletePlan(level) { try { fs.unlinkSync(planFile(level.key)); } catch (
 
 // the plan a run uses: its own, else the map's saved one, else the GLTP rules
 function resolvePlan(level, own) {
-  if (own && own.steps) return { steps: validate(own.steps, level.map), timeFrom: Number.isInteger(own.timeFrom) ? own.timeFrom : -1, source: own.source || 'run' };
+  if (own && own.steps) {
+    const out = { steps: validate(own.steps, level.map), timeFrom: Number.isInteger(own.timeFrom) ? own.timeFrom : -1, source: own.source || 'run' };
+    if (Array.isArray(own.drawn)) out.drawn = own.drawn; // the path as drawn (strokes of [x, y] tiles), for the UI
+    return out;
+  }
   const saved = savedPlan(level);
   if (saved) return { steps: validate(saved.steps, level.map), timeFrom: saved.timeFrom ?? -1, source: 'saved' };
   return { steps: defaultSteps(level), timeFrom: -1, source: 'gltp' };
